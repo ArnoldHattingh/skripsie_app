@@ -2,10 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
 
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:skripsie/models/chat_message.dart';
-import 'package:skripsie/models/location_data.dart';
+import 'package:skripsie/models/friend.dart';
 
 class BluetoothProvider extends ChangeNotifier {
   final FlutterReactiveBle _ble = FlutterReactiveBle();
@@ -40,9 +41,7 @@ class BluetoothProvider extends ChangeNotifier {
   List<ChatMessage>? _messages;
 
   // Location management
-  LocationData? _friendLocation;
-
-  LocationData? myLocation;
+  List<Friend>? _friends;
 
   // UUIDs
   Uuid? _serviceUuid;
@@ -56,17 +55,28 @@ class BluetoothProvider extends ChangeNotifier {
     }
   }
 
-  BluetoothProvider({required this.myLocation});
-
-  /// Create a copy of this provider with updated values
-  BluetoothProvider copyWith({LocationData? myLocation}) {
-    return BluetoothProvider(myLocation: myLocation ?? this.myLocation);
+  BluetoothProvider({double? latitude, double? longitude}) {
+    _friends = [
+      Friend(
+        id: "1",
+        name: "Friend 1",
+        lastSeen: DateTime.now(),
+        latitude: latitude,
+        longitude: longitude,
+        isMe: true,
+      ),
+    ];
   }
 
   /// Update the myLocation field without creating a new instance
-  void updateMyLocation(LocationData? newLocation) {
-    myLocation = newLocation;
+  void updateMyLocation(double? latitude, double? longitude) {
+    _friends?.firstWhere((friend) => friend.isMe).latitude = latitude;
+    _friends?.firstWhere((friend) => friend.isMe).longitude = longitude;
     // Don't call notifyListeners() here to avoid triggering unnecessary rebuilds
+  }
+
+  void updateMyName(String name) {
+    _friends?.firstWhere((friend) => friend.isMe).name = name;
   }
 
   // Getters
@@ -81,7 +91,7 @@ class BluetoothProvider extends ChangeNotifier {
   List<ChatMessage>? get messages =>
       _messages != null ? List.unmodifiable(_messages!) : null;
 
-  LocationData? get friendLocation => _friendLocation;
+  List<Friend>? get friends => _friends;
   Uuid? get serviceUuid => _serviceUuid;
   Uuid? get rxCharUuid => _rxCharUuid;
   Uuid? get txCharUuid => _txCharUuid;
@@ -94,7 +104,7 @@ class BluetoothProvider extends ChangeNotifier {
   /// Generate UUIDs from device code
   bool generateUuidsFromCode(String deviceCode) {
     if (_isDisposed) return false;
-    
+
     try {
       final trimmedCode = deviceCode.trim();
 
@@ -254,15 +264,10 @@ class BluetoothProvider extends ChangeNotifier {
   void _startLocationUpdates() {
     _locationTimer?.cancel();
     _locationTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
-      if (_isConnected && myLocation != null) {
-        final locationData = {
-          'type': 'location',
-          'latitude': myLocation!.latitude,
-          'longitude': myLocation!.longitude,
-          'timestamp': DateTime.now().toIso8601String(),
-          "userId": _serviceUuid?.toString().substring(0, 8),
-        };
-        sendLocationData(locationData);
+      if (_isConnected &&
+          _friends?.firstWhereOrNull((friend) => friend.isMe) != null) {
+        final myLocation = _friends?.firstWhereOrNull((friend) => friend.isMe);
+        sendLocationData(myLocation!.toJson());
       }
     });
   }
@@ -302,9 +307,16 @@ class BluetoothProvider extends ChangeNotifier {
                 _batteryPercentage = jsonData['battery'];
               } else if (jsonData['type'] == 'location') {
                 // Handle location data
-                _friendLocation = LocationData.fromJson(jsonData);
+                final friend = Friend.fromJson(jsonData);
+                final existingIndex =
+                    _friends?.indexWhere((f) => f.id == friend.id) ?? -1;
+                if (existingIndex == -1) {
+                  _friends?.add(friend);
+                } else {
+                  _friends![existingIndex] = friend;
+                }
                 developer.log(
-                  'Received friend location: ${_friendLocation!.latitude}, ${_friendLocation!.longitude}',
+                  'Received friend location: ${friend.latitude}, ${friend.longitude}',
                 );
               } else if (jsonData['text'] != null) {
                 jsonData['isMe'] = false;
@@ -315,25 +327,16 @@ class BluetoothProvider extends ChangeNotifier {
               _safeNotifyListeners();
             } catch (e) {
               print(e);
-              try {
-                final textMessage = utf8.decode(data);
-                final message = ChatMessage(
-                  text: textMessage,
-                  isMe: false,
-                  timestamp: DateTime.now(),
-                );
-                _messages!.add(message);
-                _safeNotifyListeners();
-              } catch (decodeError) {
-                developer.log('Error decoding message: $decodeError');
-                final errorMessage = ChatMessage(
-                  text: 'Received invalid message data',
-                  isMe: false,
-                  timestamp: DateTime.now(),
-                );
-                _messages!.add(errorMessage);
-                _safeNotifyListeners();
-              }
+
+              developer.log('Error decoding message: $e');
+              final errorMessage = ChatMessage(
+                text: 'Received invalid message data',
+                isMe: false,
+                timestamp: DateTime.now(),
+                userName: "System",
+              );
+              _messages!.add(errorMessage);
+              _safeNotifyListeners();
             }
           },
           onError: (error) {
@@ -359,6 +362,7 @@ class BluetoothProvider extends ChangeNotifier {
       text: text.trim(),
       isMe: true,
       timestamp: DateTime.now(),
+      userName: _friends?.firstWhereOrNull((friend) => friend.isMe)?.name ?? "Unknown",
     );
 
     try {
@@ -384,7 +388,10 @@ class BluetoothProvider extends ChangeNotifier {
 
   /// Send location data
   Future<bool> sendLocationData(Map<String, dynamic> locationData) async {
-    if (!_isConnected || _isSending || _rxCharacteristic == null || _isDisposed) {
+    if (!_isConnected ||
+        _isSending ||
+        _rxCharacteristic == null ||
+        _isDisposed) {
       return false;
     }
 
@@ -412,7 +419,7 @@ class BluetoothProvider extends ChangeNotifier {
   /// Disconnect from current device
   Future<void> disconnect() async {
     if (_isDisposed) return;
-    
+
     try {
       _messageSubscription?.cancel();
       _connectionSubscription?.cancel();
@@ -439,14 +446,14 @@ class BluetoothProvider extends ChangeNotifier {
   @override
   void dispose() {
     _isDisposed = true;
-    
+
     // Cancel all subscriptions and timers
     _messageSubscription?.cancel();
     _connectionSubscription?.cancel();
     _locationTimer?.cancel();
     _scanSubscription?.cancel();
     _scanTimer?.cancel();
-    
+
     // Clear all data
     _isConnected = false;
     _isConnecting = false;
@@ -458,7 +465,7 @@ class BluetoothProvider extends ChangeNotifier {
     _messages = null;
     _batteryPercentage = null;
     _discoveredDevices.clear();
-    
+
     super.dispose();
   }
 }

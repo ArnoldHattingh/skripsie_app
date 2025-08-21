@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:skripsie/constants.dart';
 import 'package:skripsie/providers/bluetooth_provider.dart';
 import 'package:skripsie/providers/location_provider.dart';
 import 'package:skripsie/screens/qr_scan_page.dart';
@@ -13,14 +14,14 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (context) => LocationProvider()),
-        ChangeNotifierProvider(create: (context) => BluetoothProvider(myLocation: null)),
+        ChangeNotifierProvider(create: (context) => BluetoothProvider(latitude: null, longitude: null)),
       ],
       child: Consumer<LocationProvider>(
         builder: (context, locationProvider, child) {
           // Update BluetoothProvider with new location data
           WidgetsBinding.instance.addPostFrameCallback((_) {
             final bluetoothProvider = Provider.of<BluetoothProvider>(context, listen: false);
-            bluetoothProvider.updateMyLocation(locationProvider.currentLocation);
+            bluetoothProvider.updateMyLocation(locationProvider.currentLocation?.latitude, locationProvider.currentLocation?.longitude);
           });
           
           return MaterialApp(
@@ -30,15 +31,15 @@ class MyApp extends StatelessWidget {
               useMaterial3: true,
               colorScheme:
                   ColorScheme.fromSeed(
-                    seedColor: const Color(0xFF6200EE), // Vibrant purple
-                    secondary: const Color(0xFF03DAC6), // Teal accent
+                    seedColor: PRIMARY_COLOR, // Vibrant purple
+                    secondary: SECONDARY_COLOR, // Teal accent
                     brightness: Brightness.light,
-                    primary: const Color(0xFF6200EE),
+                    primary: PRIMARY_COLOR_DARK,
                     onPrimary: Colors.white,
                     surface: Colors.white,
                     onSurface: Colors.black,
                     background: Colors.white,
-                    error: const Color(0xFFB00020),
+                    error: ERROR_COLOR,
                   ).copyWith(
                     primaryContainer: const Color(
                       0xFFE8DEF8,

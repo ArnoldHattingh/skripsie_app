@@ -1,12 +1,15 @@
 import 'dart:math';
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_compass/flutter_compass.dart';
 import 'package:provider/provider.dart';
+import 'package:skripsie/models/friend.dart';
 import 'package:skripsie/providers/bluetooth_provider.dart';
 import 'package:skripsie/providers/location_provider.dart';
 
 class FindFriendPage extends StatefulWidget {
-  const FindFriendPage({super.key});
+  const FindFriendPage({super.key, required this.friendId});
+  final String friendId;
 
   @override
   State<FindFriendPage> createState() => _FindFriendPageState();
@@ -32,7 +35,7 @@ class _FindFriendPageState extends State<FindFriendPage> {
     return Consumer2<BluetoothProvider, LocationProvider>(
       builder: (context, bluetoothProvider, locationProvider, child) {
         final theme = Theme.of(context);
-        final friendLocation = bluetoothProvider.friendLocation;
+        final Friend? friend = bluetoothProvider.friends?.firstWhereOrNull((friend) => friend.id == widget.friendId);
         final isLocationEnabled = locationProvider.isLocationEnabled;
         final isConnected = bluetoothProvider.isConnected;
 
@@ -52,7 +55,7 @@ class _FindFriendPageState extends State<FindFriendPage> {
           );
         }
 
-        if (friendLocation == null) {
+        if (friend == null) {
           return _buildErrorState(
             icon: Icons.person_search,
             message: 'Waiting for friend\'s location...',
@@ -86,15 +89,15 @@ class _FindFriendPageState extends State<FindFriendPage> {
             _direction = snapshot.data!.heading ?? 0;
 
             final bearing =
-                locationProvider.bearingToFriend(friendLocation) ?? 0;
-            final distance = locationProvider.getDistanceString(friendLocation);
+                locationProvider.bearingToFriend(friend) ?? 0;
+            final distance = locationProvider.getDistanceString(friend);
 
             // in your compass StreamBuilder:
             print("👤 User ID: ${bluetoothProvider.serviceUuid}");
-            print("📍 Me: ${locationProvider.currentLocation?.userId}");
+            print("📍 Me: ${locationProvider.currentLocation?.name}");
             print("📍 Me: ${locationProvider.currentLocation?.latitude}");
-            print("🤝 Friend: ${bluetoothProvider.friendLocation?.userId}");
-            print("🤝 Friend: ${bluetoothProvider.friendLocation?.latitude}");
+            print("🤝 Friend: ${friend.name}");
+            print("🤝 Friend: ${friend.latitude}");
             print("📐 Bearing: $bearing");
 
             return Scaffold(

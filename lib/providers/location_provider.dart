@@ -3,7 +3,7 @@ import 'dart:developer' as developer;
 
 import 'package:flutter/material.dart';
 import 'package:location/location.dart' as location_package;
-import 'package:skripsie/models/location_data.dart';
+import 'package:skripsie/models/friend.dart';
 
 class LocationProvider extends ChangeNotifier {
   final location_package.Location _location = location_package.Location();
@@ -15,7 +15,7 @@ class LocationProvider extends ChangeNotifier {
   bool _isSharingLocation = false;
 
   // Current location
-  LocationData? _currentLocation;
+  Friend? _currentLocation;
   StreamSubscription<location_package.LocationData>? _locationSubscription;
 
   LocationProvider() {
@@ -27,15 +27,15 @@ class LocationProvider extends ChangeNotifier {
   bool get isLocationPermissionGranted => _isLocationPermissionGranted;
   bool get isLocationServiceEnabled => _isLocationServiceEnabled;
   bool get isSharingLocation => _isSharingLocation;
-  LocationData? get currentLocation => _currentLocation;
+  Friend? get currentLocation => _currentLocation;
 
   // Distance and direction to friend
-  double? distanceToFriend(LocationData? friendLocation) {
+  double? distanceToFriend(Friend? friendLocation) {
     if (_currentLocation == null || friendLocation == null) return null;
     return _currentLocation!.distanceTo(friendLocation);
   }
 
-  double? bearingToFriend(LocationData? friendLocation) {
+  double? bearingToFriend(Friend? friendLocation) {
     if (_currentLocation == null || friendLocation == null) return null;
     return _currentLocation!.bearingTo(friendLocation);
   }
@@ -90,11 +90,13 @@ class LocationProvider extends ChangeNotifier {
       // Subscribe to location updates
       _locationSubscription = _location.onLocationChanged.listen(
         (location_package.LocationData locationData) {
-          _currentLocation = LocationData(
-            userId: "user_id",
-            timestamp: DateTime.now(),
+          _currentLocation = Friend(
+            id: "1",
+            name: "Friend 1",
+            lastSeen: DateTime.now(),
             latitude: locationData.latitude ?? 0,
             longitude: locationData.longitude ?? 0,
+            isMe: true,
           );
           notifyListeners();
         },
@@ -112,7 +114,7 @@ class LocationProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  String getDirectionString(LocationData? friendLocation) {
+  String getDirectionString(Friend? friendLocation) {
     if (bearingToFriend(friendLocation) == null) return 'Unknown';
 
     final bearing = bearingToFriend(friendLocation)!;
@@ -129,7 +131,7 @@ class LocationProvider extends ChangeNotifier {
   }
 
   /// Get distance string (meters, kilometers)
-  String getDistanceString(LocationData? friendLocation) {
+  String getDistanceString(Friend? friendLocation) {
     if (distanceToFriend(friendLocation) == null) return 'Unknown';
 
     final distance = distanceToFriend(friendLocation)!;
