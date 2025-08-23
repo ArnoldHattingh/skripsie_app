@@ -93,7 +93,6 @@ class _FindFriendPageState extends State<FindFriendPage> {
             final distance = locationProvider.getDistanceString(friend);
 
             // in your compass StreamBuilder:
-            print("👤 User ID: ${bluetoothProvider.serviceUuid}");
             print("📍 Me: ${locationProvider.currentLocation?.name}");
             print("📍 Me: ${locationProvider.currentLocation?.latitude}");
             print("🤝 Friend: ${friend.name}");

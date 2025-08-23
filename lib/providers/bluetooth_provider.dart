@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:developer' as developer;
 
 import 'package:collection/collection.dart';
@@ -7,46 +6,33 @@ import 'package:flutter/material.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'package:skripsie/models/chat_message.dart';
 import 'package:skripsie/models/friend.dart';
+import 'package:skripsie/models/group_connection_info.dart';
+import 'package:skripsie/services/bluetooth_service.dart';
 
 class BluetoothProvider extends ChangeNotifier {
-  final FlutterReactiveBle _ble = FlutterReactiveBle();
+  late final BluetoothService _bluetoothService;
 
   // Navigation callback
   VoidCallback? _onConnected;
-  // Connection state
-  bool _isConnected = false;
-  bool _isScanning = false;
-  bool _isConnecting = false;
+
+  //Getters
+  bool get isConnected => _bluetoothService.isConnected;
+  bool get isScanning => _bluetoothService.isScanning;
+  bool get isConnecting => _bluetoothService.isConnecting;
+  DiscoveredDevice? get connectedDevice => _bluetoothService.connectedDevice;
+  int? get batteryPercentage => _bluetoothService.batteryPercentage;
+  bool get isSending => _isSending;
+  List<ChatMessage>? get messages =>
+      _messages != null ? List.unmodifiable(_messages!) : null;
+  List<Friend>? get friends => _friends;
+  GroupConnectionInfo? get groupConnectionInfo => _groupConnectionInfo;
+
+  // State
   bool _isSending = false;
   bool _isDisposed = false;
-
-  int? _batteryPercentage;
-
-  // Device and connection management
-  DiscoveredDevice? _connectedDevice;
-  StreamSubscription<ConnectionStateUpdate>? _connectionSubscription;
-  StreamSubscription<List<int>>? _messageSubscription;
-
-  // Characteristic management
-  QualifiedCharacteristic? _rxCharacteristic;
-  QualifiedCharacteristic? _txCharacteristic;
-
-  // Device discovery
-  final List<DiscoveredDevice> _discoveredDevices = [];
-  StreamSubscription<DiscoveredDevice>? _scanSubscription;
-  Timer? _scanTimer;
-  Timer? _locationTimer;
-
-  // Message management
   List<ChatMessage>? _messages;
-
-  // Location management
   List<Friend>? _friends;
-
-  // UUIDs
-  Uuid? _serviceUuid;
-  Uuid? _rxCharUuid;
-  Uuid? _txCharUuid;
+  GroupConnectionInfo? _groupConnectionInfo;
 
   /// Safely notify listeners only if not disposed
   void _safeNotifyListeners() {
@@ -56,6 +42,9 @@ class BluetoothProvider extends ChangeNotifier {
   }
 
   BluetoothProvider({double? latitude, double? longitude}) {
+    _bluetoothService = BluetoothService();
+    _setupBluetoothServiceListeners();
+
     _friends = [
       Friend(
         id: "1",
@@ -68,33 +57,70 @@ class BluetoothProvider extends ChangeNotifier {
     ];
   }
 
+  void _setupBluetoothServiceListeners() {
+    _bluetoothService.onConnectionStateChanged = () {
+      if (_bluetoothService.isConnected && _onConnected != null) {
+        _onConnected!();
+      }
+      _safeNotifyListeners();
+    };
+
+    _bluetoothService.onMessageReceived = (Map<String, dynamic> data) {
+      _handleReceivedMessage(data);
+    };
+
+    _bluetoothService.onDevicesUpdated = () {
+      _safeNotifyListeners();
+    };
+  }
+
+  void _handleReceivedMessage(Map<String, dynamic> jsonData) {
+    try {
+      if (jsonData['type'] == 'location') {
+        // Handle location data
+        final friend = Friend.fromJson(jsonData);
+        final existingIndex =
+            _friends?.indexWhere((f) => f.id == friend.id) ?? -1;
+        if (existingIndex == -1) {
+          _friends?.add(friend);
+        } else {
+          _friends![existingIndex] = friend;
+        }
+        developer.log(
+          'Received friend location: ${friend.latitude}, ${friend.longitude}',
+        );
+      } else if (jsonData['text'] != null) {
+        jsonData['isMe'] = false;
+        final message = ChatMessage.fromJson(jsonData);
+        _messages ??= [];
+        _messages!.add(message);
+      }
+
+      _safeNotifyListeners();
+    } catch (e) {
+      developer.log('Error handling received message: $e');
+    }
+  }
+
   /// Update the myLocation field without creating a new instance
   void updateMyLocation(double? latitude, double? longitude) {
-    _friends?.firstWhere((friend) => friend.isMe).latitude = latitude;
-    _friends?.firstWhere((friend) => friend.isMe).longitude = longitude;
-    // Don't call notifyListeners() here to avoid triggering unnecessary rebuilds
+    _friends?.firstWhereOrNull((friend) => friend.isMe)?.latitude = latitude;
+    _friends?.firstWhereOrNull((friend) => friend.isMe)?.longitude = longitude;
+    _friends?.firstWhereOrNull((friend) => friend.isMe)?.lastSeen =
+        DateTime.now();
+    _safeNotifyListeners();
+    print("🌍 My Location Updated: $latitude, $longitude");
   }
 
   void updateMyName(String name) {
-    _friends?.firstWhere((friend) => friend.isMe).name = name;
+    _friends?.firstWhereOrNull((friend) => friend.isMe)?.name = name;
+    _safeNotifyListeners();
   }
 
-  // Getters
-  bool get isConnected => _isConnected;
-  bool get isScanning => _isScanning;
-  bool get isConnecting => _isConnecting;
-  bool get isSending => _isSending;
-  int? get batteryPercentage => _batteryPercentage;
-  DiscoveredDevice? get connectedDevice => _connectedDevice;
-  List<DiscoveredDevice> get discoveredDevices =>
-      List.unmodifiable(_discoveredDevices);
-  List<ChatMessage>? get messages =>
-      _messages != null ? List.unmodifiable(_messages!) : null;
-
-  List<Friend>? get friends => _friends;
-  Uuid? get serviceUuid => _serviceUuid;
-  Uuid? get rxCharUuid => _rxCharUuid;
-  Uuid? get txCharUuid => _txCharUuid;
+  void updateGroupConnectionInfo(GroupConnectionInfo groupConnectionInfo) {
+    _groupConnectionInfo = groupConnectionInfo;
+    _safeNotifyListeners();
+  }
 
   /// Set navigation callback for when connection is established
   void setOnConnectedCallback(VoidCallback callback) {
@@ -104,253 +130,34 @@ class BluetoothProvider extends ChangeNotifier {
   /// Generate UUIDs from device code
   bool generateUuidsFromCode(String deviceCode) {
     if (_isDisposed) return false;
-
-    try {
-      final trimmedCode = deviceCode.trim();
-
-      // Validate device code
-      if (trimmedCode.isEmpty || trimmedCode.length != 8) {
-        return false;
-      }
-
-      // Validate hex format
-      if (!RegExp(r'^[0-9A-Fa-f]{8}$').hasMatch(trimmedCode)) {
-        return false;
-      }
-
-      // Generate UUIDs with 8-4-4-4-12 layout
-      _serviceUuid = Uuid.parse(
-        "${trimmedCode.substring(0, 8)}-" // 8 chars
-        "0000-" // 4 chars
-        "0000-" // 4 chars
-        "0000-" // fixed 4 chars
-        "000000000000", // 12 chars
-      );
-
-      _rxCharUuid = Uuid.parse(
-        "${trimmedCode.substring(0, 8)}-" // 8 chars
-        "1000-" // 4 chars
-        "0000-" // 4 chars
-        "0000-" // fixed 4 chars
-        "000000000000", // 12 chars
-      );
-
-      _txCharUuid = Uuid.parse(
-        "${trimmedCode.substring(0, 8)}-" // 8 chars
-        "2000-" // 4 chars
-        "0000-" // 4 chars
-        "0000-" // fixed 4 chars
-        "000000000000", // 12 chars
-      );
-
-      if (!_isDisposed) {
-        notifyListeners();
-      }
-      return true;
-    } catch (e) {
-      developer.log('Error generating UUIDs: $e');
-      return false;
+    final result = _bluetoothService.generateUuidsFromCode(deviceCode);
+    if (result) {
+      _safeNotifyListeners();
     }
+    return result;
   }
 
   /// Start scanning for devices
   void startScan() {
-    if (_isScanning || _serviceUuid == null || _isDisposed) return;
-
-    _discoveredDevices.clear();
-    _isScanning = true;
-    _safeNotifyListeners();
-
-    developer.log("Starting scan for devices...");
-    developer.log("Service UUID: $_serviceUuid");
-    developer.log("RX Char UUID: $_rxCharUuid");
-    developer.log("TX Char UUID: $_txCharUuid");
-
-    _scanSubscription = _ble
-        .scanForDevices(withServices: [], scanMode: ScanMode.lowLatency)
-        .listen(
-          (device) {
-            if (_discoveredDevices.indexWhere((d) => d.id == device.id) < 0) {
-              _discoveredDevices.add(device);
-              _safeNotifyListeners();
-            }
-
-            // Auto-connect to matching device
-            if (device.name ==
-                "StickLite-${_serviceUuid.toString().substring(0, 8)}") {
-              stopScan();
-              connectToDevice(device);
-            }
-          },
-          onError: (e) {
-            developer.log('Scan error: $e');
-            stopScan();
-          },
-        );
-
-    // Restart scan every 5 seconds
-    _scanTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
-      developer.log("Restarting scan for devices");
-      stopScan();
-      startScan();
-    });
+    _bluetoothService.startScan();
   }
 
   /// Stop scanning for devices
   void stopScan() {
-    _scanSubscription?.cancel();
-    _scanTimer?.cancel();
-    _isScanning = false;
-    _safeNotifyListeners();
+    _bluetoothService.stopScan();
   }
 
   /// Connect to a specific device
   Future<bool> connectToDevice(DiscoveredDevice device) async {
-    if (_isConnecting || _isDisposed) return false;
-
-    _isConnecting = true;
-    _safeNotifyListeners();
-
-    try {
-      final connection = _ble
-          .connectToDevice(
-            id: device.id,
-            connectionTimeout: const Duration(seconds: 5),
-          )
-          .asBroadcastStream();
-
-      _connectionSubscription = connection.listen(
-        (update) {
-          if (update.connectionState == DeviceConnectionState.connected) {
-            _isConnected = true;
-            _connectedDevice = device;
-            _setupMessageHandling();
-            _startLocationUpdates(); // Start location updates when connected
-            _safeNotifyListeners();
-
-            // Call navigation callback if set
-            if (_onConnected != null) {
-              _onConnected!();
-            }
-          } else if (update.connectionState ==
-              DeviceConnectionState.disconnected) {
-            _isConnected = false;
-            _connectedDevice = null;
-            _messageSubscription?.cancel();
-            _messageSubscription = null;
-            _locationTimer?.cancel(); // Stop location updates when disconnected
-            _safeNotifyListeners();
-          }
-        },
-        onError: (error) {
-          developer.log('Connection error: $error');
-          _isConnected = false;
-          _connectedDevice = null;
-          _safeNotifyListeners();
-        },
-      );
-
-      await connection.first;
-      return true;
-    } catch (e) {
-      developer.log('Failed to connect: $e');
-      _isConnecting = false;
-      _safeNotifyListeners();
-      return false;
-    }
-  }
-
-  /// Start periodic location updates
-  void _startLocationUpdates() {
-    _locationTimer?.cancel();
-    _locationTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
-      if (_isConnected &&
-          _friends?.firstWhereOrNull((friend) => friend.isMe) != null) {
-        final myLocation = _friends?.firstWhereOrNull((friend) => friend.isMe);
-        sendLocationData(myLocation!.toJson());
-      }
-    });
-  }
-
-  /// Setup message handling after connection
-  void _setupMessageHandling() {
-    if (_serviceUuid == null ||
-        _rxCharUuid == null ||
-        _txCharUuid == null ||
-        _connectedDevice == null) {
-      return;
-    }
-
-    _rxCharacteristic = QualifiedCharacteristic(
-      serviceId: _serviceUuid!,
-      characteristicId: _rxCharUuid!,
-      deviceId: _connectedDevice!.id,
-    );
-
-    _txCharacteristic = QualifiedCharacteristic(
-      serviceId: _serviceUuid!,
-      characteristicId: _txCharUuid!,
-      deviceId: _connectedDevice!.id,
-    );
-
-    _messages ??= [];
-
-    _messageSubscription = _ble
-        .subscribeToCharacteristic(_txCharacteristic!)
-        .listen(
-          (data) {
-            try {
-              final jsonStr = utf8.decode(data);
-              final jsonData = jsonDecode(jsonStr) as Map<String, dynamic>;
-
-              if (jsonData['battery'] != null) {
-                _batteryPercentage = jsonData['battery'];
-              } else if (jsonData['type'] == 'location') {
-                // Handle location data
-                final friend = Friend.fromJson(jsonData);
-                final existingIndex =
-                    _friends?.indexWhere((f) => f.id == friend.id) ?? -1;
-                if (existingIndex == -1) {
-                  _friends?.add(friend);
-                } else {
-                  _friends![existingIndex] = friend;
-                }
-                developer.log(
-                  'Received friend location: ${friend.latitude}, ${friend.longitude}',
-                );
-              } else if (jsonData['text'] != null) {
-                jsonData['isMe'] = false;
-                final message = ChatMessage.fromJson(jsonData);
-                _messages!.add(message);
-              }
-
-              _safeNotifyListeners();
-            } catch (e) {
-              print(e);
-
-              developer.log('Error decoding message: $e');
-              final errorMessage = ChatMessage(
-                text: 'Received invalid message data',
-                isMe: false,
-                timestamp: DateTime.now(),
-                userName: "System",
-              );
-              _messages!.add(errorMessage);
-              _safeNotifyListeners();
-            }
-          },
-          onError: (error) {
-            developer.log('Subscription error: $error');
-          },
-        );
+    if (_isDisposed) return false;
+    return await _bluetoothService.connectToDevice(device);
   }
 
   /// Send a message
   Future<bool> sendMessage(String text) async {
     if (text.trim().isEmpty ||
-        !_isConnected ||
+        !_bluetoothService.isConnected ||
         _isSending ||
-        _rxCharacteristic == null ||
         _isDisposed) {
       return false;
     }
@@ -362,22 +169,22 @@ class BluetoothProvider extends ChangeNotifier {
       text: text.trim(),
       isMe: true,
       timestamp: DateTime.now(),
-      userName: _friends?.firstWhereOrNull((friend) => friend.isMe)?.name ?? "Unknown",
+      userName:
+          _friends?.firstWhereOrNull((friend) => friend.isMe)?.name ??
+          "Unknown",
     );
 
     try {
-      final messageData = jsonEncode(message.toJson());
-      await _ble.writeCharacteristicWithoutResponse(
-        _rxCharacteristic!,
-        value: utf8.encode(messageData),
-      );
+      final success = await _bluetoothService.sendData(message.toJson());
 
-      _messages ??= [];
+      if (success) {
+        _messages ??= [];
+        _messages!.add(message);
+      }
 
-      _messages!.add(message);
       _isSending = false;
       _safeNotifyListeners();
-      return true;
+      return success;
     } catch (e) {
       developer.log('Send error: $e');
       _isSending = false;
@@ -386,12 +193,8 @@ class BluetoothProvider extends ChangeNotifier {
     }
   }
 
-  /// Send location data
   Future<bool> sendLocationData(Map<String, dynamic> locationData) async {
-    if (!_isConnected ||
-        _isSending ||
-        _rxCharacteristic == null ||
-        _isDisposed) {
+    if (!_bluetoothService.isConnected || _isSending || _isDisposed) {
       return false;
     }
 
@@ -399,15 +202,10 @@ class BluetoothProvider extends ChangeNotifier {
     _safeNotifyListeners();
 
     try {
-      final messageData = jsonEncode(locationData);
-      await _ble.writeCharacteristicWithoutResponse(
-        _rxCharacteristic!,
-        value: utf8.encode(messageData),
-      );
-
+      final success = await _bluetoothService.sendData(locationData);
       _isSending = false;
       _safeNotifyListeners();
-      return true;
+      return success;
     } catch (e) {
       developer.log('Send location error: $e');
       _isSending = false;
@@ -421,22 +219,9 @@ class BluetoothProvider extends ChangeNotifier {
     if (_isDisposed) return;
 
     try {
-      _messageSubscription?.cancel();
-      _connectionSubscription?.cancel();
-      _locationTimer?.cancel(); // Cancel location updates timer
-      stopScan();
-
-      _isConnected = false;
-      _isConnecting = false;
-      _isSending = false;
-      _connectedDevice = null;
-      _rxCharacteristic = null;
-      _txCharacteristic = null;
+      await _bluetoothService.disconnect();
       _messages?.clear();
       _messages = null;
-      _batteryPercentage = null;
-
-      // Only notify listeners if not disposed
       _safeNotifyListeners();
     } catch (e) {
       developer.log('Error during disconnect: $e');
@@ -446,26 +231,9 @@ class BluetoothProvider extends ChangeNotifier {
   @override
   void dispose() {
     _isDisposed = true;
-
-    // Cancel all subscriptions and timers
-    _messageSubscription?.cancel();
-    _connectionSubscription?.cancel();
-    _locationTimer?.cancel();
-    _scanSubscription?.cancel();
-    _scanTimer?.cancel();
-
-    // Clear all data
-    _isConnected = false;
-    _isConnecting = false;
-    _isSending = false;
-    _connectedDevice = null;
-    _rxCharacteristic = null;
-    _txCharacteristic = null;
+    _bluetoothService.dispose();
     _messages?.clear();
     _messages = null;
-    _batteryPercentage = null;
-    _discoveredDevices.clear();
-
     super.dispose();
   }
 }

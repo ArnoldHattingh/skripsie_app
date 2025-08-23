@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:skripsie/providers/bluetooth_provider.dart';
-import 'package:skripsie/screens/chat_page.dart';
 import 'package:skripsie/screens/home%20screen.dart';
 
 class DeviceSelectionPage extends StatefulWidget {
@@ -179,7 +178,7 @@ class _NameSetupDialogState extends State<NameSetupDialog> {
       if (mounted) {
         Navigator.of(context).pop(); // Close dialog
         Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => const HomeScreen()),
+          MaterialPageRoute(builder: (context) => const HomeScreenWrapper()),
           (route) => false,
         );
       }
