@@ -286,12 +286,37 @@ class HomeScreen extends StatelessWidget {
                             ],
                           ),
                         ),
+                        const SizedBox(height: 24),
+
+                        if (bluetoothProvider.isConnected) ...[
+                          _ModernActionButton(
+                            icon: Icons.chat_bubble_rounded,
+                            label: 'Open Chat',
+                            subtitle: bluetoothProvider.unreadMessageCount > 0
+                                ? '${bluetoothProvider.unreadMessageCount} unread message${bluetoothProvider.unreadMessageCount > 1 ? 's' : ''}'
+                                : 'Start messaging with your group',
+                            isPrimary: true,
+                            hasNotification:
+                                bluetoothProvider.unreadMessageCount > 0,
+                            notificationCount:
+                                bluetoothProvider.unreadMessageCount,
+                            onTap: () {
+                              // Mark messages as read when opening chat
+                              bluetoothProvider.markMessagesAsRead();
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) => const ChatPage(),
+                                ),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                        ],
 
                         // Friends List Section
                         if (bluetoothProvider.isConnected &&
                             bluetoothProvider.friends != null &&
                             bluetoothProvider.friends!.isNotEmpty) ...[
-                          const SizedBox(height: 24),
                           Container(
                             width: double.infinity,
                             padding: const EdgeInsets.all(24),
@@ -551,34 +576,48 @@ class HomeScreen extends StatelessWidget {
                                                         const SizedBox(
                                                           width: 6,
                                                         ),
-                                                        Text(
-                                                          isActive
-                                                              ? 'Active'
-                                                              : 'Inactive',
-                                                          style: TextStyle(
-                                                            color: isActive
-                                                                ? Colors
-                                                                      .green[700]
-                                                                : Colors
-                                                                      .grey[600],
-                                                            fontSize: 12,
-                                                            fontWeight:
-                                                                FontWeight.w500,
+                                                        Expanded(
+                                                          child: Row(
+                                                            children: [
+                                                              Text(
+                                                                isActive
+                                                                    ? 'Active'
+                                                                    : 'Inactive',
+                                                                style: TextStyle(
+                                                                  color:
+                                                                      isActive
+                                                                      ? Colors
+                                                                            .green[700]
+                                                                      : Colors
+                                                                            .grey[600],
+                                                                  fontSize: 12,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w500,
+                                                                ),
+                                                              ),
+                                                              if (!isActive) ...[
+                                                                const SizedBox(
+                                                                  width: 8,
+                                                                ),
+                                                                Flexible(
+                                                                  child: Text(
+                                                                    'Last seen ${_formatLastSeen(friend.lastSeen)}',
+                                                                    style: TextStyle(
+                                                                      color: Colors
+                                                                          .grey[500],
+                                                                      fontSize:
+                                                                          12,
+                                                                    ),
+                                                                    overflow:
+                                                                        TextOverflow
+                                                                            .ellipsis,
+                                                                  ),
+                                                                ),
+                                                              ],
+                                                            ],
                                                           ),
                                                         ),
-                                                        if (!isActive) ...[
-                                                          const SizedBox(
-                                                            width: 8,
-                                                          ),
-                                                          Text(
-                                                            '• Last seen ${_formatLastSeen(friend.lastSeen)}',
-                                                            style: TextStyle(
-                                                              color: Colors
-                                                                  .grey[500],
-                                                              fontSize: 12,
-                                                            ),
-                                                          ),
-                                                        ],
                                                       ],
                                                     ),
                                                     if (hasLocation &&
@@ -647,22 +686,6 @@ class HomeScreen extends StatelessWidget {
                         // Action Buttons Section
                         Column(
                           children: [
-                            if (bluetoothProvider.isConnected) ...[
-                              _ModernActionButton(
-                                icon: Icons.chat_bubble_rounded,
-                                label: 'Open Chat',
-                                subtitle: 'Start messaging with your group',
-                                isPrimary: true,
-                                onTap: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (context) => const ChatPage(),
-                                    ),
-                                  );
-                                },
-                              ),
-                              const SizedBox(height: 16),
-                            ],
                             _ModernActionButton(
                               icon: bluetoothProvider.isConnected
                                   ? Icons.bluetooth_disabled_rounded
@@ -734,6 +757,8 @@ class _ModernActionButton extends StatelessWidget {
   final VoidCallback onTap;
   final bool isPrimary;
   final bool isDestructive;
+  final bool hasNotification;
+  final int notificationCount;
 
   const _ModernActionButton({
     required this.icon,
@@ -742,6 +767,8 @@ class _ModernActionButton extends StatelessWidget {
     required this.onTap,
     this.isPrimary = false,
     this.isDestructive = false,
+    this.hasNotification = false,
+    this.notificationCount = 0,
   });
 
   @override
@@ -793,22 +820,54 @@ class _ModernActionButton extends StatelessWidget {
                 ),
           child: Row(
             children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: isPrimary
-                      ? Colors.white.withOpacity(0.2)
-                      : (isDestructive
-                            ? Colors.red[100]
-                            : theme.colorScheme.primary.withOpacity(0.1)),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  icon,
-                  color: isPrimary ? Colors.white : iconColor,
-                  size: 24,
-                ),
+              Stack(
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: isPrimary
+                          ? Colors.white.withOpacity(0.2)
+                          : (isDestructive
+                                ? Colors.red[100]
+                                : theme.colorScheme.primary.withOpacity(0.1)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      icon,
+                      color: isPrimary ? Colors.white : iconColor,
+                      size: 24,
+                    ),
+                  ),
+                  if (hasNotification && notificationCount > 0)
+                    Positioned(
+                      right: 0,
+                      top: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: backgroundColor, width: 2),
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 20,
+                          minHeight: 20,
+                        ),
+                        child: Text(
+                          notificationCount > 99
+                              ? '99+'
+                              : notificationCount.toString(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
               ),
               const SizedBox(width: 16),
               Expanded(

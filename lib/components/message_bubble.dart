@@ -28,6 +28,17 @@ class MessageBubble extends StatelessWidget {
           crossAxisAlignment: message.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (!message.isMe) ...[
+              Text(
+                message.userName,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
+                ),
+              ),
+              const SizedBox(height: 4),
+            ],
             Text(
               message.text,
               style: TextStyle(

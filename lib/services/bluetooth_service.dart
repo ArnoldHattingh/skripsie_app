@@ -14,8 +14,6 @@ class BluetoothService {
   bool _isConnecting = false;
   bool _isDisposed = false;
 
-  int? _batteryPercentage;
-
   // Device and connection management
   DiscoveredDevice? _connectedDevice;
   StreamSubscription<ConnectionStateUpdate>? _connectionSubscription;
@@ -45,7 +43,6 @@ class BluetoothService {
   bool get isConnected => _isConnected;
   bool get isScanning => _isScanning;
   bool get isConnecting => _isConnecting;
-  int? get batteryPercentage => _batteryPercentage;
   DiscoveredDevice? get connectedDevice => _connectedDevice;
   List<DiscoveredDevice> get discoveredDevices =>
       List.unmodifiable(_discoveredDevices);
@@ -242,10 +239,6 @@ class BluetoothService {
               final jsonStr = utf8.decode(data);
               final jsonData = jsonDecode(jsonStr) as Map<String, dynamic>;
 
-              if (jsonData['battery'] != null) {
-                _batteryPercentage = jsonData['battery'];
-              }
-
               onMessageReceived?.call(jsonData);
             } catch (e) {
               developer.log('Error decoding message: $e');
@@ -297,7 +290,6 @@ class BluetoothService {
       _connectedDevice = null;
       _rxCharacteristic = null;
       _txCharacteristic = null;
-      _batteryPercentage = null;
 
       onConnectionStateChanged?.call();
     } catch (e) {
@@ -321,7 +313,6 @@ class BluetoothService {
     _connectedDevice = null;
     _rxCharacteristic = null;
     _txCharacteristic = null;
-    _batteryPercentage = null;
     _discoveredDevices.clear();
   }
 }

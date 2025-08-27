@@ -20,6 +20,7 @@ class _JoinOrCreateGroupScreenState extends State<JoinOrCreateGroupScreen> {
   final GlobalKey qrKey = GlobalKey(debugLabel: 'QR');
   QRViewController? controller;
   bool _hasScanned = false;
+  bool _hasSaidSuccess = false;
 
   @override
   void dispose() {
@@ -46,9 +47,13 @@ class _JoinOrCreateGroupScreenState extends State<JoinOrCreateGroupScreen> {
       provider.updateGroupConnectionInfo(groupInfo);
 
       controller?.pauseCamera();
+      if (_hasSaidSuccess) {
+        return;
+      }
       setState(() {
         _isScanning = false;
         _hasScanned = false;
+        _hasSaidSuccess = true;
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
