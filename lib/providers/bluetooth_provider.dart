@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 import 'dart:developer' as developer;
 import 'dart:math';
 
@@ -9,6 +11,9 @@ import 'package:skripsie/models/chat_message.dart';
 import 'package:skripsie/models/friend.dart';
 import 'package:skripsie/models/group_connection_info.dart';
 import 'package:skripsie/services/bluetooth_service.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:image/image.dart' as img;
+import 'package:skripsie/services/image_bw_service.dart';
 
 class BluetoothProvider extends ChangeNotifier {
   late final BluetoothService _bluetoothService;
@@ -30,6 +35,10 @@ class BluetoothProvider extends ChangeNotifier {
   DiscoveredDevice? get connectedDevice => _bluetoothService.connectedDevice;
   int? get batteryPercentage => _batteryPercentage;
   bool get isSending => _isSending;
+  int? get sendProgressSent => _sendProgressSent;
+  int? get sendProgressTotal => _sendProgressTotal;
+  int? get recvProgressReceived => _recvProgressReceived;
+  int? get recvProgressTotal => _recvProgressTotal;
   List<ChatMessage> get messages => List.unmodifiable(_messages);
   List<Friend>? get friends => _friends;
   GroupConnectionInfo? get groupConnectionInfo => _groupConnectionInfo;
@@ -43,6 +52,10 @@ class BluetoothProvider extends ChangeNotifier {
   GroupConnectionInfo? _groupConnectionInfo;
   int? _batteryPercentage;
   int _unreadMessageCount = 0;
+  int? _sendProgressSent;
+  int? _sendProgressTotal;
+  int? _recvProgressReceived;
+  int? _recvProgressTotal;
 
   /// Safely notify listeners only if not disposed
   void _safeNotifyListeners() {
@@ -89,6 +102,26 @@ class BluetoothProvider extends ChangeNotifier {
     };
 
     _bluetoothService.onDevicesUpdated = () {
+      _safeNotifyListeners();
+    };
+
+    _bluetoothService.onSendProgress = (sent, total) {
+      _sendProgressSent = sent;
+      _sendProgressTotal = total;
+      if (sent == total) {
+        _sendProgressSent = null;
+        _sendProgressTotal = null;
+      }
+      _safeNotifyListeners();
+    };
+
+    _bluetoothService.onReceiveProgress = (received, total) {
+      _recvProgressReceived = received;
+      _recvProgressTotal = total;
+      if (received == total) {
+        _recvProgressReceived = null;
+        _recvProgressTotal = null;
+      }
       _safeNotifyListeners();
     };
   }
@@ -197,6 +230,12 @@ class BluetoothProvider extends ChangeNotifier {
           _messages.add(message);
           _unreadMessageCount++; // Increment unread count for received messages
         }
+      } else if ((jsonData['messageType'] == 'image_bw' || jsonData['messageType'] == 'img_bw') && jsonData['image_bw'] != null) {
+        // Handle low-res image message
+        jsonData['isMe'] = false; // incoming => mark as not me
+        final message = ChatMessage.fromJson(jsonData);
+        _messages.add(message);
+        _unreadMessageCount++;
       } else if (jsonData['battery'] != null) {
         _batteryPercentage = jsonData['battery'];
       }
@@ -286,6 +325,7 @@ class BluetoothProvider extends ChangeNotifier {
 
   void updateGroupConnectionInfo(GroupConnectionInfo groupConnectionInfo) {
     _groupConnectionInfo = groupConnectionInfo;
+    _bluetoothService.setGroupInfo(groupConnectionInfo);
     _safeNotifyListeners();
 
     // Send initial location when joining group
@@ -340,12 +380,13 @@ class BluetoothProvider extends ChangeNotifier {
     _safeNotifyListeners();
 
     final message = ChatMessage(
-      text: text.trim(),
       isMe: true,
       timestamp: DateTime.now(),
       userName:
           _friends?.firstWhereOrNull((friend) => friend.isMe)?.name ??
           "Unknown",
+      messageType: 'text',
+      text: text.trim(),
     );
 
     try {
@@ -362,6 +403,83 @@ class BluetoothProvider extends ChangeNotifier {
       developer.log('Send error: $e');
       _isSending = false;
       _safeNotifyListeners();
+      return false;
+    }
+  }
+
+  /// Send very low-res BW image (bit-packed)
+  Future<bool> sendBwImage({
+    required int width,
+    required int height,
+    required List<int> bitPackedBytes,
+  }) async {
+    if (!_bluetoothService.isConnected || _isSending || _isDisposed) {
+      return false;
+    }
+
+    _isSending = true;
+    _safeNotifyListeners();
+
+    final myName = _friends?.firstWhereOrNull((friend) => friend.isMe)?.name ?? 'Unknown';
+    final msg = ChatMessage(
+      isMe: true,
+      timestamp: DateTime.now(),
+      userName: myName,
+      messageType: 'image_bw',
+      imageBw: ImageBitsBw(
+        width: width,
+        height: height,
+        dataB64: base64Encode(bitPackedBytes),
+      ),
+    );
+
+    try {
+      final success = await _bluetoothService.sendData(msg.toJson());
+      if (success) {
+        _messages.add(msg);
+      }
+      _isSending = false;
+      _safeNotifyListeners();
+      return success;
+    } catch (e) {
+      developer.log('Send image error: $e');
+      _isSending = false;
+      _safeNotifyListeners();
+      return false;
+    }
+  }
+
+  /// Capture from camera, process to 1-bit 128x96 or 160x120, and send
+  Future<bool> captureAndSendBwImage({int targetW = 128, int targetH = 96}) async {
+    if (!_bluetoothService.isConnected || _isSending || _isDisposed) {
+      return false;
+    }
+
+    try {
+      final picker = ImagePicker();
+      final file = await picker.pickImage(source: ImageSource.camera, imageQuality: 40, preferredCameraDevice: CameraDevice.rear);
+      if (file == null) return false;
+      final bytes = await file.readAsBytes();
+
+      // Decode to obtain dimensions and RGBA
+      final decoded = img.decodeImage(bytes);
+      if (decoded == null) return false;
+      final rgba = decoded.getBytes(order: img.ChannelOrder.rgba);
+      final b64 = ImageBwService.processToPackedB64(
+        rgbaBytes: Uint8List.fromList(rgba),
+        srcWidth: decoded.width,
+        srcHeight: decoded.height,
+        targetWidth: targetW,
+        targetHeight: targetH,
+      );
+
+      return await sendBwImage(
+        width: targetW,
+        height: targetH,
+        bitPackedBytes: base64Decode(b64),
+      );
+    } catch (e) {
+      developer.log('captureAndSendBwImage error: $e');
       return false;
     }
   }

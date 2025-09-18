@@ -124,55 +124,95 @@ class _ChatPageState extends State<ChatPage> {
               child: Column(
                 children: [
                   Expanded(
-                    child: bluetoothProvider.messages == null
-                        ? const Center(
-                            child: CircularProgressIndicator(),
-                          )
-                        : bluetoothProvider.messages!.isEmpty
-                            ? Center(
-                                child: Container(
-                                  padding: const EdgeInsets.all(32),
-                                  decoration: BoxDecoration(
-                                    color: theme.colorScheme.surfaceVariant.withOpacity(0.5),
-                                    borderRadius: BorderRadius.circular(24),
-                                  ),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.chat_bubble_outline_rounded,
-                                        size: 64,
-                                        color: theme.colorScheme.primary,
-                                      ),
-                                      const SizedBox(height: 16),
-                                      Text(
-                                        'No messages yet',
-                                        style: theme.textTheme.titleLarge?.copyWith(
-                                          color: theme.colorScheme.onSurfaceVariant,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        'Start a conversation!',
-                                        style: theme.textTheme.bodyMedium?.copyWith(
-                                          color: theme.colorScheme.onSurfaceVariant.withOpacity(0.8),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              )
-                            : ListView.builder(
-                                reverse: true,
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-                                itemCount: bluetoothProvider.messages?.length ?? 0,
-                                itemBuilder: (context, index) {
-                                  final message = bluetoothProvider.messages![bluetoothProvider.messages!.length - 1 - index];
-                                  return MessageBubble(message: message);
-                                },
+                    child: bluetoothProvider.messages.isEmpty
+                        ? Center(
+                            child: Container(
+                              padding: const EdgeInsets.all(32),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.surfaceVariant.withOpacity(0.5),
+                                borderRadius: BorderRadius.circular(24),
                               ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.chat_bubble_outline_rounded,
+                                    size: 64,
+                                    color: theme.colorScheme.primary,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'No messages yet',
+                                    style: theme.textTheme.titleLarge?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Start a conversation!',
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant.withOpacity(0.8),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            reverse: true,
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+                            itemCount: bluetoothProvider.messages.length,
+                            itemBuilder: (context, index) {
+                              final message = bluetoothProvider.messages[bluetoothProvider.messages.length - 1 - index];
+                              return MessageBubble(message: message);
+                            },
+                          ),
                   ),
+                  if (bluetoothProvider.sendProgressSent != null && bluetoothProvider.sendProgressTotal != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: LinearProgressIndicator(
+                              value: bluetoothProvider.sendProgressTotal == 0
+                                  ? null
+                                  : (bluetoothProvider.sendProgressSent! / bluetoothProvider.sendProgressTotal!),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            '${bluetoothProvider.sendProgressSent}/${bluetoothProvider.sendProgressTotal}',
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (bluetoothProvider.recvProgressReceived != null && bluetoothProvider.recvProgressTotal != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: LinearProgressIndicator(
+                              value: bluetoothProvider.recvProgressTotal == 0
+                                  ? null
+                                  : (bluetoothProvider.recvProgressReceived! / bluetoothProvider.recvProgressTotal!),
+                              color: theme.colorScheme.secondary,
+                              backgroundColor: theme.colorScheme.secondaryContainer,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            'Downloading ${bluetoothProvider.recvProgressReceived}/${bluetoothProvider.recvProgressTotal}',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSecondaryContainer,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   Container(
                     decoration: BoxDecoration(
                       color: theme.colorScheme.surface,
@@ -205,7 +245,8 @@ class _ChatPageState extends State<ChatPage> {
                               ),
                               style: theme.textTheme.bodyLarge,
                               onSubmitted: (_) => _sendMessage(),
-                              maxLines: null,
+                              minLines: 1,
+                              maxLines: 7,
                               textCapitalization: TextCapitalization.sentences,
                             ),
                           ),
@@ -247,6 +288,40 @@ class _ChatPageState extends State<ChatPage> {
                             ),
                           ),
                         ),
+                        // const SizedBox(width: 8),
+                        // Tooltip(
+                        //   message: 'Send low-res image',
+                        //   child: Container(
+                        //     decoration: BoxDecoration(
+                        //       color: bluetoothProvider.isConnected && !bluetoothProvider.isSending 
+                        //           ? theme.colorScheme.secondary
+                        //           : theme.colorScheme.surfaceVariant,
+                        //       shape: BoxShape.circle,
+                        //     ),
+                        //     child: Material(
+                        //       color: Colors.transparent,
+                        //       child: InkWell(
+                        //         onTap: bluetoothProvider.isConnected && !bluetoothProvider.isSending
+                        //             ? () async {
+                        //                 // Capture from camera, convert to 1-bit 128x96, send
+                        //                 await bluetoothProvider.captureAndSendBwImage(targetW: 128, targetH: 96);
+                        //               }
+                        //             : null,
+                        //         borderRadius: BorderRadius.circular(24),
+                        //         child: Padding(
+                        //           padding: const EdgeInsets.all(12),
+                        //           child: Icon(
+                        //             Icons.photo_camera_rounded,
+                        //             color: bluetoothProvider.isConnected
+                        //                 ? theme.colorScheme.onSecondary
+                        //                 : theme.colorScheme.onSurfaceVariant.withOpacity(0.5),
+                        //             size: 22,
+                        //           ),
+                        //         ),
+                        //       ),
+                        //     ),
+                        //   ),
+                        // ),
                       ],
                     ),
                   ),

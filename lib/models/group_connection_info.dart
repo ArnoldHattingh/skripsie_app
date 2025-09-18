@@ -91,7 +91,7 @@ class _Hkdf {
   }
 }
 
-/// Holds both the invite payload (what’s in the QR) and all derived params.
+/// Holds both the invite payload (what's in the QR) and all derived params.
 /// - Store seeds as Base64 in JSON, but expose bytes + derived fields for use.
 /// - Derivation is deterministic: same (groupSeed,salt,rf,chan) → same outputs.
 class GroupConnectionInfo {
@@ -111,10 +111,6 @@ class GroupConnectionInfo {
   final int primaryIndex;
 
   // -------- Derived (computed once) --------
-
-  /// Root key material (not exposed directly; used to derive subkeys/fields).
-  final Uint8List _rootKey; // HKDF over (groupSeed,salt)
-
   /// Group AEAD key (use for ChaCha20-Poly1305 32B, or AES-CCM 16B)
   final Uint8List kEnc;
 
@@ -138,13 +134,12 @@ class GroupConnectionInfo {
     required this.spreadingFactor,
     required this.planLabel,
     required this.primaryIndex,
-    required Uint8List rootKey,
     required this.kEnc,
     required this.syncWord,
     required this.netId,
     required this.channelOrder,
     required this.backupIndices,
-  }) : _rootKey = rootKey;
+  });
 
   /// Factory: build from QR JSON (does derivations immediately).
   factory GroupConnectionInfo.fromJson(Map<String, dynamic> json) {
@@ -232,7 +227,6 @@ class GroupConnectionInfo {
       spreadingFactor: sf,
       planLabel: plan,
       primaryIndex: primary,
-      rootKey: root,
       kEnc: kEnc,
       syncWord: syncWord,
       netId: netId,
@@ -283,14 +277,34 @@ class GroupConnectionInfo {
     return sb.toString();
   }
 
-  /// Build a compact provisioning map for the Heltec firmware (SET_GROUP).
+  /// Utility to create a secure 32-bit memberId (unique per device).
+  static int generateMemberId() {
+    final r = Random.secure();
+    int v = 0;
+    for (int i = 0; i < 4; i++) {
+      v = (v << 8) | r.nextInt(256);
+    }
+    return v & 0xFFFFFFFF;
+  }
+
+  /// Utility to generate a fresh bootSalt (4 random bytes).
+  static Uint8List generateBootSalt() {
+    final r = Random.secure();
+    final out = Uint8List(4);
+    for (int i = 0; i < 4; i++) {
+      out[i] = r.nextInt(256);
+    }
+    return out;
+  }
+
+  /// Build a provisioning record for the Heltec firmware (SET_GROUP).
   Map<String, dynamic> toProvisioningRecord({
-    required int memberId, // random 32-bit per device
-    int seqInit = 0,
-    Uint8List? bootSalt, // optional per-boot 4B salt to mix into nonces
-    String aeadAlg = 'chacha20-poly1305',
+    required int memberId,          // unique per device
+    int seqInit = 0,                // starting sequence number
+    Uint8List? bootSalt,            // 4B random salt (if null, auto-generate)
+    String aeadAlg = 'chacha20',    // or 'aes-gcm-128'
   }) {
-    final _bootSalt = bootSalt ?? _randomBytes(4);
+    final bs = bootSalt ?? generateBootSalt();
     return {
       'cmd': 'SET_GROUP',
       'freqHz': primaryFreqHz,
@@ -305,7 +319,7 @@ class GroupConnectionInfo {
       },
       'memberId': memberId & 0xFFFFFFFF,
       'seqInit': seqInit,
-      'bootSalt': base64Encode(_bootSalt),
+      'bootSalt': base64Encode(bs),
       'backups': backupIndices,
     };
   }
@@ -336,23 +350,5 @@ class GroupConnectionInfo {
     return order;
   }
 
-  /// Utility to create a secure 32-bit memberId.
-  static int generateMemberId() {
-    final r = Random.secure();
-    // Compose 32-bit from four bytes
-    int v = 0;
-    for (int i = 0; i < 4; i++) {
-      v = (v << 8) | r.nextInt(256);
-    }
-    return v & 0xFFFFFFFF;
-  }
-
-  static Uint8List _randomBytes(int n) {
-    final r = Random.secure();
-    final out = Uint8List(n);
-    for (int i = 0; i < n; i++) {
-      out[i] = r.nextInt(256);
-    }
-    return out;
-  }
+  
 }
