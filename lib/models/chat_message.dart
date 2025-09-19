@@ -4,13 +4,13 @@ class ChatMessage {
   final String userName;
 
   // Message kinds
-  final String messageType; // 'text' | 'image_bw'
+  final String messageType; // 'text' | 'image_2bpp'
 
   // Text payload
   final String? text;
 
-  // Black/white image payload (bit-packed)
-  final ImageBitsBw? imageBw;
+  // 2-bpp grayscale payload (4 levels, 4 pixels per byte)
+  final Image2bpp? image2bpp;
 
   ChatMessage({
     required this.isMe,
@@ -18,7 +18,7 @@ class ChatMessage {
     required this.userName,
     required this.messageType,
     this.text,
-    this.imageBw,
+    this.image2bpp,
   });
 
   Map<String, dynamic> toJson() {
@@ -30,8 +30,8 @@ class ChatMessage {
     };
     if (messageType == 'text') {
       map['text'] = text ?? '';
-    } else if (messageType == 'image_bw' && imageBw != null) {
-      map['image_bw'] = imageBw!.toJson();
+    } else if (messageType == 'image_2bpp' && image2bpp != null) {
+      map['image_2bpp'] = image2bpp!.toJson();
     }
     return map;
   }
@@ -44,34 +44,30 @@ class ChatMessage {
       userName: json['userName'] as String? ?? 'Unknown',
       messageType: type,
       text: type == 'text' ? json['text'] as String? ?? '' : null,
-      imageBw: type == 'image_bw'
-          ? ImageBitsBw.fromJson(json['image_bw'] as Map<String, dynamic>)
+      image2bpp: type == 'image_2bpp'
+          ? Image2bpp.fromJson(json['image_2bpp'] as Map<String, dynamic>)
           : null,
     );
   }
 }
 
-class ImageBitsBw {
+class Image2bpp {
   final int width;
   final int height;
-  // Bit-packed row-major, MSB first in each byte; base64 encoded for JSON
+  // 2-bpp packed row-major, 4 pixels per byte, MSB first for first pixel; base64 encoded
   final String dataB64;
 
-  ImageBitsBw({
+  Image2bpp({
     required this.width,
     required this.height,
     required this.dataB64,
   });
 
-  Map<String, dynamic> toJson() => {
-        'w': width,
-        'h': height,
-        'b64': dataB64,
-      };
+  Map<String, dynamic> toJson() => {'w': width, 'h': height, 'b64': dataB64};
 
-  factory ImageBitsBw.fromJson(Map<String, dynamic> json) => ImageBitsBw(
-        width: (json['w'] as num).toInt(),
-        height: (json['h'] as num).toInt(),
-        dataB64: json['b64'] as String,
-      );
+  factory Image2bpp.fromJson(Map<String, dynamic> json) => Image2bpp(
+    width: (json['w'] as num).toInt(),
+    height: (json['h'] as num).toInt(),
+    dataB64: json['b64'] as String,
+  );
 }

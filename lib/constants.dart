@@ -6,3 +6,7 @@ const Color PRIMARY_COLOR_DARK = Color(0xFF6200EE);
 const Color PRIMARY_COLOR_LIGHT = Color(0xFFE8DEF8);
 const Color SECONDARY_COLOR_LIGHT = Color(0xFFCEFAF8);
 const Color ERROR_COLOR = Color(0xFFB00020);
+
+const int DEFAULT_IMAGE_WIDTH = 128;
+const int DEFAULT_IMAGE_HEIGHT = 128;
+const bool DEFAULT_IMAGE_DITHER = true;

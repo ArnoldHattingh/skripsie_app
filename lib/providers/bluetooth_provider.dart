@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:math';
 import 'package:collection/collection.dart';
@@ -224,9 +225,9 @@ class BluetoothProvider extends ChangeNotifier {
           _messages.add(message);
           _unreadMessageCount++; // Increment unread count for received messages
         }
-      } else if ((jsonData['messageType'] == 'image_bw' || jsonData['messageType'] == 'img_bw') && jsonData['image_bw'] != null) {
-        // Handle low-res image message
-        jsonData['isMe'] = false; // incoming => mark as not me
+      } else if (jsonData['messageType'] == 'image_2bpp' && jsonData['image_2bpp'] != null) {
+        // Handle 2-bpp grayscale image message
+        jsonData['isMe'] = false;
         final message = ChatMessage.fromJson(jsonData);
         _messages.add(message);
         _unreadMessageCount++;
@@ -379,7 +380,7 @@ class BluetoothProvider extends ChangeNotifier {
       userName:
           _friends?.firstWhereOrNull((friend) => friend.isMe)?.name ??
           "Unknown",
-      messageType: 'text',
+      messageType: text,
       text: text.trim(),
     );
 
@@ -416,6 +417,47 @@ class BluetoothProvider extends ChangeNotifier {
       return success;
     } catch (e) {
       developer.log('Send data error: $e');
+      _isSending = false;
+      _safeNotifyListeners();
+      return false;
+    }
+  }
+
+  /// Capture already-prepared 2-bpp image bytes and send as a chat message.
+  /// Adds the message locally on success.
+  Future<bool> sendImage2bpp({
+    required int width,
+    required int height,
+    required List<int> bytes,
+  }) async {
+    if (!_bluetoothService.isConnected || _isSending || _isDisposed) {
+      return false;
+    }
+
+    _isSending = true;
+    _safeNotifyListeners();
+
+    final me = _friends?.firstWhereOrNull((f) => f.isMe);
+    final b64 = base64Encode(bytes);
+
+    final message = ChatMessage(
+      isMe: true,
+      timestamp: DateTime.now(),
+      userName: me?.name ?? 'Unknown',
+      messageType: 'image_2bpp',
+      image2bpp: Image2bpp(width: width, height: height, dataB64: b64),
+    );
+
+    try {
+      final success = await _bluetoothService.sendData(message.toJson());
+      if (success) {
+        _messages.add(message);
+      }
+      _isSending = false;
+      _safeNotifyListeners();
+      return success;
+    } catch (e) {
+      developer.log('Send image_2bpp error: $e');
       _isSending = false;
       _safeNotifyListeners();
       return false;

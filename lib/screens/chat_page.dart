@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:skripsie/components/message_bubble.dart';
+import 'package:skripsie/constants.dart';
 import 'package:skripsie/providers/bluetooth_provider.dart';
+import 'package:skripsie/services/two_bpp_capture.dart';
 
 class ChatPage extends StatefulWidget {
   const ChatPage({super.key});
@@ -228,6 +230,62 @@ class _ChatPageState extends State<ChatPage> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
+                        Tooltip(
+                          message: 'Send 2-bpp image',
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: bluetoothProvider.isConnected && !bluetoothProvider.isSending 
+                                  ? theme.colorScheme.secondary
+                                  : theme.colorScheme.surfaceVariant,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: bluetoothProvider.isConnected && !bluetoothProvider.isSending
+                                    ? () async {
+                                        final result = await pickOrCapture2bpp(
+                                          context,
+                                          targetWidth: DEFAULT_IMAGE_WIDTH,
+                                          targetHeight: DEFAULT_IMAGE_HEIGHT,
+                                          dither: DEFAULT_IMAGE_DITHER,
+                                        );
+                                        if (result == null) return;
+                                        final header = (result['header'] as Map);
+                                        final bytes = (result['bytes'] as List<int>);
+                                        final w = header['width'] as int;
+                                        final h = header['height'] as int;
+                                        final ok = await bluetoothProvider.sendImage2bpp(
+                                          width: w,
+                                          height: h,
+                                          bytes: bytes,
+                                        );
+                                        if (!ok && context.mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(
+                                              content: const Text('Failed to send image'),
+                                              backgroundColor: theme.colorScheme.error,
+                                            ),
+                                          );
+                                        }
+                                      }
+                                    : null,
+                                borderRadius: BorderRadius.circular(24),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Icon(
+                                    Icons.photo_camera_rounded,
+                                    color: bluetoothProvider.isConnected
+                                        ? theme.colorScheme.onSecondary
+                                        : theme.colorScheme.onSurfaceVariant.withOpacity(0.5),
+                                    size: 22,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
                         Expanded(
                           child: Container(
                             decoration: BoxDecoration(
@@ -288,40 +346,7 @@ class _ChatPageState extends State<ChatPage> {
                             ),
                           ),
                         ),
-                        // const SizedBox(width: 8),
-                        // Tooltip(
-                        //   message: 'Send low-res image',
-                        //   child: Container(
-                        //     decoration: BoxDecoration(
-                        //       color: bluetoothProvider.isConnected && !bluetoothProvider.isSending 
-                        //           ? theme.colorScheme.secondary
-                        //           : theme.colorScheme.surfaceVariant,
-                        //       shape: BoxShape.circle,
-                        //     ),
-                        //     child: Material(
-                        //       color: Colors.transparent,
-                        //       child: InkWell(
-                        //         onTap: bluetoothProvider.isConnected && !bluetoothProvider.isSending
-                        //             ? () async {
-                        //                 // Capture from camera, convert to 1-bit 128x96, send
-                        //                 await bluetoothProvider.captureAndSendBwImage(targetW: 128, targetH: 96);
-                        //               }
-                        //             : null,
-                        //         borderRadius: BorderRadius.circular(24),
-                        //         child: Padding(
-                        //           padding: const EdgeInsets.all(12),
-                        //           child: Icon(
-                        //             Icons.photo_camera_rounded,
-                        //             color: bluetoothProvider.isConnected
-                        //                 ? theme.colorScheme.onSecondary
-                        //                 : theme.colorScheme.onSurfaceVariant.withOpacity(0.5),
-                        //             size: 22,
-                        //           ),
-                        //         ),
-                        //       ),
-                        //     ),
-                        //   ),
-                        // ),
+                        
                       ],
                     ),
                   ),

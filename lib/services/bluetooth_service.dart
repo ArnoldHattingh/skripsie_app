@@ -312,47 +312,15 @@ class BluetoothService {
     _messageSubscription = _ble
         .subscribeToCharacteristic(_txCharacteristic!)
         .listen(
-          (data) async {
+          (data) {
             print('BluetoothService: Received data: ${data.length} bytes');
             if (_codec == null) {
               print('BluetoothService: No codec available for decryption');
               return;
             }
 
-            try {
-              final maybeJson = await _codec!.tryDecryptFrame(
-                Uint8List.fromList(data),
-                onNonJson: (type, flags, hop, senderId, seq, pt) {
-                  print(
-                    'BluetoothService: Received non-JSON frame - type: $type, senderId: $senderId, seq: $seq',
-                  );
-                  // Handle other types if you add them later (acks, etc.)
-                },
-                onFragProgress: (received, total, senderId, seq) {
-                  onReceiveProgress?.call(received, total);
-                },
-              );
-
-              _codec!.sweepStaleFragments();
-
-              if (maybeJson != null) {
-                print(
-                  'BluetoothService: Successfully decrypted JSON message: $maybeJson',
-                );
-                onMessageReceived?.call(maybeJson);
-              } else {
-                print('BluetoothService: Decryption returned null');
-              }
-            } catch (e) {
-              print('BluetoothService: Decrypt/parse error: $e');
-              developer.log('Decrypt/parse error: $e');
-              onMessageReceived?.call({
-                'text': 'Received invalid/unauthenticated frame',
-                'isMe': false,
-                'timestamp': DateTime.now().toIso8601String(),
-                'userName': 'System',
-              });
-            }
+            // Process decryption in parallel without blocking the stream
+            _processDecryptionAsync(Uint8List.fromList(data));
           },
           onError: (e) {
             print('BluetoothService: Subscription error: $e');
@@ -360,6 +328,38 @@ class BluetoothService {
           },
         );
     print('BluetoothService: Message handling setup complete');
+  }
+
+  /// Process decryption asynchronously in parallel
+  void _processDecryptionAsync(Uint8List data) async {
+    try {
+      final maybeJson = await _codec!.tryDecryptFrame(
+        data,
+        onNonJson: (type, flags, hop, senderId, seq, pt) {
+          print(
+            'BluetoothService: Received non-JSON frame - type: $type, senderId: $senderId, seq: $seq',
+          );
+          // Handle other types if you add them later (acks, etc.)
+        },
+        onFragProgress: (received, total, senderId, seq) {
+          onReceiveProgress?.call(received, total);
+        },
+      );
+
+      _codec!.sweepStaleFragments();
+
+      if (maybeJson != null) {
+        print(
+          'BluetoothService: Successfully decrypted JSON message: $maybeJson',
+        );
+        onMessageReceived?.call(maybeJson);
+      } else {
+        print('BluetoothService: Decryption returned null');
+      }
+    } catch (e) {
+      print('BluetoothService: Decryption error: $e');
+      developer.log('Decryption error: $e');
+    }
   }
 
   /// Send data

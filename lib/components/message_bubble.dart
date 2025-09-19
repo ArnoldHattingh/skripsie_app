@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:skripsie/constants.dart';
 import 'package:skripsie/models/chat_message.dart';
+import 'package:skripsie/components/two_bpp_image_view.dart';
 
 class MessageBubble extends StatelessWidget {
   final ChatMessage message;
@@ -26,7 +28,9 @@ class MessageBubble extends StatelessWidget {
           ),
         ),
         child: Column(
-          crossAxisAlignment: message.isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          crossAxisAlignment: message.isMe
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
             if (!message.isMe) ...[
@@ -35,7 +39,9 @@ class MessageBubble extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
                 ),
               ),
               const SizedBox(height: 4),
@@ -49,18 +55,21 @@ class MessageBubble extends StatelessWidget {
                       : Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               )
-            else if (message.messageType == 'image_bw' && message.imageBw != null)
-              _BwImage(bits: message.imageBw!, isMe: message.isMe)
-            else if (message.messageType == 'img_bw' && message.imageBw != null)
-              _BwImage(bits: message.imageBw!, isMe: message.isMe),
+            else if (message.messageType == 'image_2bpp' &&
+                message.image2bpp != null)
+              _TwoBppInline(image: message.image2bpp!, isMe: message.isMe),
             const SizedBox(height: 4),
             Text(
               _formatTimestamp(message.timestamp),
               style: TextStyle(
                 fontSize: 10,
                 color: message.isMe
-                    ? Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.7)
-                    : Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                    ? Theme.of(
+                        context,
+                      ).colorScheme.onPrimary.withValues(alpha: 0.7)
+                    : Theme.of(
+                        context,
+                      ).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
               ),
             ),
           ],
@@ -74,72 +83,40 @@ class MessageBubble extends StatelessWidget {
   }
 }
 
-class _BwImage extends StatelessWidget {
-  final ImageBitsBw bits;
+class _TwoBppInline extends StatelessWidget {
+  final Image2bpp image;
   final bool isMe;
-  const _BwImage({required this.bits, required this.isMe});
+  const _TwoBppInline({required this.image, required this.isMe});
 
   @override
   Widget build(BuildContext context) {
-    try {
-      final data = base64Decode(bits.dataB64);
-      var pixels = _unpackBits(data, bits.width, bits.height);
-      // If everything decoded as off (all zeros), auto-invert as a fallback
-      final anyOn = pixels.any((e) => e != 0);
-      if (!anyOn) {
-        pixels = pixels.map((e) => e == 0 ? 1 : 0).toList(growable: false);
-      }
-      // Determine pixel size based on target width (keep bubble compact)
-      final maxDisplayWidth = MediaQuery.of(context).size.width * 0.55;
-      final pxSize = (maxDisplayWidth / bits.width).clamp(3.0, 6.0);
-      final faintOffColor = isMe
-          ? Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.08)
-          : Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.06);
-      return Container(
-        padding: const EdgeInsets.all(6),
-        decoration: BoxDecoration(
-          color: isMe
-              ? Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.06)
-              : Theme.of(context).colorScheme.surfaceTint.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(8),
+    final faintBg = isMe
+        ? Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.06)
+        : Theme.of(context).colorScheme.surfaceTint.withValues(alpha: 0.06);
+    final header = {
+      'width': image.width,
+      'height': image.height,
+      'format': '2bpp',
+      'packed': true,
+    };
+    final data = base64Decode(image.dataB64);
+    final map = {'header': header, 'bytes': data};
+    final maxDisplayWidth = MediaQuery.of(context).size.width * 0.55;
+    final scale = (maxDisplayWidth / image.width).clamp(3.0, 8.0).floor();
+    return Container(
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
+        color: faintBg,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: TwoBppImageView(
+          twoBppMap: map,
+          pixelScale: scale,
+          
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: List.generate(bits.height, (y) {
-            return Row(
-              mainAxisSize: MainAxisSize.min,
-              children: List.generate(bits.width, (x) {
-                final on = pixels[y * bits.width + x] != 0;
-                return Container(
-                  width: pxSize,
-                  height: pxSize,
-                  color: on
-                      ? (isMe
-                          ? Theme.of(context).colorScheme.onPrimary
-                          : Theme.of(context).colorScheme.onSurface)
-                      : faintOffColor,
-                );
-              }),
-            );
-          }),
-        ),
-      );
-    } catch (_) {
-      return const Text('[image]');
-    }
-  }
-
-  List<int> _unpackBits(List<int> bytes, int w, int h) {
-    final total = w * h;
-    final out = List<int>.filled(total, 0);
-    for (int i = 0; i < total; i++) {
-      final byteIndex = i >> 3;
-      final bitIndex = 7 - (i & 7);
-      if (byteIndex < bytes.length) {
-        final bit = (bytes[byteIndex] >> bitIndex) & 1;
-        out[i] = bit;
-      }
-    }
-    return out;
+      ),
+    );
   }
 }
