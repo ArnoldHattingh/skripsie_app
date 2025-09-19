@@ -1,9 +1,6 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:typed_data';
 import 'dart:developer' as developer;
 import 'dart:math';
-
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
@@ -11,9 +8,6 @@ import 'package:skripsie/models/chat_message.dart';
 import 'package:skripsie/models/friend.dart';
 import 'package:skripsie/models/group_connection_info.dart';
 import 'package:skripsie/services/bluetooth_service.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:image/image.dart' as img;
-import 'package:skripsie/services/image_bw_service.dart';
 
 class BluetoothProvider extends ChangeNotifier {
   late final BluetoothService _bluetoothService;
@@ -133,7 +127,7 @@ class BluetoothProvider extends ChangeNotifier {
     final myFriend = _friends?.firstWhereOrNull((friend) => friend.isMe);
     if (myFriend?.latitude != null && myFriend?.longitude != null) {
       final locationData = myFriend!.toJson();
-      sendLocationData(locationData);
+      sendData(locationData);
       _hasInitialLocationSent = true;
       developer.log('Initial location sent after joining group');
     }
@@ -153,7 +147,7 @@ class BluetoothProvider extends ChangeNotifier {
       final myFriend = _friends?.firstWhereOrNull((friend) => friend.isMe);
       if (myFriend?.latitude != null && myFriend?.longitude != null) {
         final locationData = myFriend!.toJson();
-        sendLocationData(locationData);
+        sendData(locationData);
         developer.log('Periodic location update sent');
       }
     });
@@ -253,7 +247,7 @@ class BluetoothProvider extends ChangeNotifier {
     final myFriend = _friends?.firstWhereOrNull((friend) => friend.isMe);
     if (myFriend?.latitude != null && myFriend?.longitude != null) {
       final locationData = myFriend!.toJson();
-      sendLocationData(locationData);
+      sendData(locationData);
       developer.log('Sent location in response to request');
     }
   }
@@ -407,84 +401,7 @@ class BluetoothProvider extends ChangeNotifier {
     }
   }
 
-  /// Send very low-res BW image (bit-packed)
-  Future<bool> sendBwImage({
-    required int width,
-    required int height,
-    required List<int> bitPackedBytes,
-  }) async {
-    if (!_bluetoothService.isConnected || _isSending || _isDisposed) {
-      return false;
-    }
-
-    _isSending = true;
-    _safeNotifyListeners();
-
-    final myName = _friends?.firstWhereOrNull((friend) => friend.isMe)?.name ?? 'Unknown';
-    final msg = ChatMessage(
-      isMe: true,
-      timestamp: DateTime.now(),
-      userName: myName,
-      messageType: 'image_bw',
-      imageBw: ImageBitsBw(
-        width: width,
-        height: height,
-        dataB64: base64Encode(bitPackedBytes),
-      ),
-    );
-
-    try {
-      final success = await _bluetoothService.sendData(msg.toJson());
-      if (success) {
-        _messages.add(msg);
-      }
-      _isSending = false;
-      _safeNotifyListeners();
-      return success;
-    } catch (e) {
-      developer.log('Send image error: $e');
-      _isSending = false;
-      _safeNotifyListeners();
-      return false;
-    }
-  }
-
-  /// Capture from camera, process to 1-bit 128x96 or 160x120, and send
-  Future<bool> captureAndSendBwImage({int targetW = 128, int targetH = 96}) async {
-    if (!_bluetoothService.isConnected || _isSending || _isDisposed) {
-      return false;
-    }
-
-    try {
-      final picker = ImagePicker();
-      final file = await picker.pickImage(source: ImageSource.camera, imageQuality: 40, preferredCameraDevice: CameraDevice.rear);
-      if (file == null) return false;
-      final bytes = await file.readAsBytes();
-
-      // Decode to obtain dimensions and RGBA
-      final decoded = img.decodeImage(bytes);
-      if (decoded == null) return false;
-      final rgba = decoded.getBytes(order: img.ChannelOrder.rgba);
-      final b64 = ImageBwService.processToPackedB64(
-        rgbaBytes: Uint8List.fromList(rgba),
-        srcWidth: decoded.width,
-        srcHeight: decoded.height,
-        targetWidth: targetW,
-        targetHeight: targetH,
-      );
-
-      return await sendBwImage(
-        width: targetW,
-        height: targetH,
-        bitPackedBytes: base64Decode(b64),
-      );
-    } catch (e) {
-      developer.log('captureAndSendBwImage error: $e');
-      return false;
-    }
-  }
-
-  Future<bool> sendLocationData(Map<String, dynamic> locationData) async {
+  Future<bool> sendData(Map<String, dynamic> sendData) async {
     if (!_bluetoothService.isConnected || _isSending || _isDisposed) {
       return false;
     }
@@ -493,12 +410,12 @@ class BluetoothProvider extends ChangeNotifier {
     _safeNotifyListeners();
 
     try {
-      final success = await _bluetoothService.sendData(locationData);
+      final success = await _bluetoothService.sendData(sendData);
       _isSending = false;
       _safeNotifyListeners();
       return success;
     } catch (e) {
-      developer.log('Send location error: $e');
+      developer.log('Send data error: $e');
       _isSending = false;
       _safeNotifyListeners();
       return false;
