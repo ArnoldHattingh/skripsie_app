@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:qr_code_scanner_plus/qr_code_scanner_plus.dart';
 import 'package:skripsie/models/group_connection_info.dart';
 import 'package:skripsie/providers/bluetooth_provider.dart';
+import 'package:skripsie/screens/determine_group_info_screen.dart';
 
 class JoinOrCreateGroupScreen extends StatefulWidget {
   const JoinOrCreateGroupScreen({super.key});
@@ -75,22 +76,26 @@ class _JoinOrCreateGroupScreenState extends State<JoinOrCreateGroupScreen> {
     }
   }
 
-  void _createGroup() {
+  void _createGroup() async {
     try {
       // Generate secure random seeds
       final random = Random.secure();
       final groupSeed = List.generate(32, (_) => random.nextInt(256));
       final salt = List.generate(16, (_) => random.nextInt(256));
 
-      final groupJson = {
-        'proto': 1,
-        'groupSeed': base64Encode(groupSeed),
-        'salt': base64Encode(salt),
-        'rf': {'bw': 125000, 'sf': 7, 'plan': 'EU868-125k-200kstep-12'},
-        'chan': {'primaryIndex': random.nextInt(12)},
-      };
+      final channelInfo = await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => const DetermineGroupInfoScreen(),
+        ),
+      );
 
-      final groupInfo = GroupConnectionInfo.fromJson(groupJson);
+      final groupInfo = GroupConnectionInfo.fromChannelInfo(
+        groupSeedB64: base64Encode(groupSeed),
+        saltB64: base64Encode(salt),
+        centerFrequencyHz: channelInfo['centerFrequencyHz'],
+        bandwidthHz: channelInfo['bandwidthHz'],
+        spreadingFactor: channelInfo['spreadingFactor'],
+      );
 
       final provider = Provider.of<BluetoothProvider>(context, listen: false);
       provider.updateGroupConnectionInfo(groupInfo);
@@ -355,7 +360,7 @@ class _JoinOrCreateGroupScreenState extends State<JoinOrCreateGroupScreen> {
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              'Primary: ${provider.groupConnectionInfo!.primaryFreqHz / 1000000} MHz',
+                              'Primary: ${provider.groupConnectionInfo!.centerFrequencyHz / 1000000} MHz',
                               style: Theme.of(context).textTheme.bodySmall
                                   ?.copyWith(color: Colors.green[700]),
                             ),

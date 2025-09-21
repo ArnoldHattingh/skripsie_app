@@ -38,10 +38,14 @@ class BluetoothProvider extends ChangeNotifier {
   List<Friend>? get friends => _friends;
   GroupConnectionInfo? get groupConnectionInfo => _groupConnectionInfo;
   int get unreadMessageCount => _unreadMessageCount;
+  bool get isRssiScanning => _isRssiScanning;
+  Map<String, dynamic>? get rssiScanResults => _rssiScanResults;
 
   // State
   bool _isSending = false;
   bool _isDisposed = false;
+  bool _isRssiScanning = false;
+  Map<String, dynamic>? _rssiScanResults;
   final List<ChatMessage> _messages = [];
   List<Friend>? _friends;
   GroupConnectionInfo? _groupConnectionInfo;
@@ -122,8 +126,11 @@ class BluetoothProvider extends ChangeNotifier {
   }
 
   void _sendInitialLocation() {
-    if (_hasInitialLocationSent || _isDisposed || _groupConnectionInfo == null)
+    if (_hasInitialLocationSent ||
+        _isDisposed ||
+        _groupConnectionInfo == null) {
       return;
+    }
 
     final myFriend = _friends?.firstWhereOrNull((friend) => friend.isMe);
     if (myFriend?.latitude != null && myFriend?.longitude != null) {
@@ -201,6 +208,7 @@ class BluetoothProvider extends ChangeNotifier {
 
   void _handleReceivedMessage(Map<String, dynamic> jsonData) {
     try {
+      print('Received message: $jsonData');
       if (jsonData['latitude'] != null) {
         // Handle location data
         final friend = Friend.fromJson(jsonData);
@@ -225,7 +233,8 @@ class BluetoothProvider extends ChangeNotifier {
           _messages.add(message);
           _unreadMessageCount++; // Increment unread count for received messages
         }
-      } else if (jsonData['messageType'] == 'image_2bpp' && jsonData['image_2bpp'] != null) {
+      } else if (jsonData['messageType'] == 'image_2bpp' &&
+          jsonData['image_2bpp'] != null) {
         // Handle 2-bpp grayscale image message
         jsonData['isMe'] = false;
         final message = ChatMessage.fromJson(jsonData);
@@ -233,6 +242,11 @@ class BluetoothProvider extends ChangeNotifier {
         _unreadMessageCount++;
       } else if (jsonData['battery'] != null) {
         _batteryPercentage = jsonData['battery'];
+      } else if (jsonData['t'] == 'rssi') {
+        // Handle RSSI scan results
+        _rssiScanResults = jsonData;
+        _isRssiScanning = false;
+        developer.log('Received RSSI scan results: ${jsonData['results']}');
       }
 
       _safeNotifyListeners();
@@ -250,6 +264,41 @@ class BluetoothProvider extends ChangeNotifier {
       final locationData = myFriend!.toJson();
       sendData(locationData);
       developer.log('Sent location in response to request');
+    }
+  }
+
+  /// Start RSSI scan with provided parameters
+  Future<bool> startRssiScan(Map<String, dynamic> scanParams) async {
+    if (!_bluetoothService.isConnected || _isSending || _isDisposed || _isRssiScanning) {
+      developer.log('Cannot start RSSI scan: invalid conditions');
+      return false;
+    }
+
+    _isRssiScanning = true;
+    _rssiScanResults = null; // Clear previous results
+    _safeNotifyListeners();
+
+    try {
+      final success = await _bluetoothService.sendData(
+        scanParams,
+        sendRaw: true,
+        encrypt: false,
+      );
+
+      if (success) {
+        developer.log('RSSI scan started with params: $scanParams');
+      } else {
+        developer.log('Failed to start RSSI scan');
+        _isRssiScanning = false;
+        _safeNotifyListeners();
+      }
+
+      return success;
+    } catch (e) {
+      developer.log('Error starting RSSI scan: $e');
+      _isRssiScanning = false;
+      _safeNotifyListeners();
+      return false;
     }
   }
 
@@ -321,6 +370,20 @@ class BluetoothProvider extends ChangeNotifier {
   void updateGroupConnectionInfo(GroupConnectionInfo groupConnectionInfo) {
     _groupConnectionInfo = groupConnectionInfo;
     _bluetoothService.setGroupInfo(groupConnectionInfo);
+    _bluetoothService.sendData(
+      {
+        "messageType": "loraConfiguration",
+        "freq":
+            groupConnectionInfo.centerFrequencyHz /
+            1000000.0, // Convert Hz to MHz
+        "bw_khz": groupConnectionInfo.bandwidthHz / 1000, // Convert Hz to kHz
+        "sf": groupConnectionInfo.spreadingFactor,
+        "syncWord":
+            "0x${groupConnectionInfo.syncWord.toRadixString(16).padLeft(4, '0').toUpperCase()}",
+      },
+      sendRaw: true,
+      encrypt: false,
+    );
     _safeNotifyListeners();
 
     // Send initial location when joining group
@@ -380,7 +443,7 @@ class BluetoothProvider extends ChangeNotifier {
       userName:
           _friends?.firstWhereOrNull((friend) => friend.isMe)?.name ??
           "Unknown",
-      messageType: text,
+      messageType: 'text',
       text: text.trim(),
     );
 
