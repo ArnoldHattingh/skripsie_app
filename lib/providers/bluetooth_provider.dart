@@ -208,7 +208,6 @@ class BluetoothProvider extends ChangeNotifier {
 
   void _handleReceivedMessage(Map<String, dynamic> jsonData) {
     try {
-      print('Received message: $jsonData');
       if (jsonData['latitude'] != null) {
         // Handle location data
         final friend = Friend.fromJson(jsonData);

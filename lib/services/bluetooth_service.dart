@@ -269,8 +269,6 @@ class BluetoothService {
   /// Process decryption asynchronously in parallel
   void _processDecryptionAsync(Uint8List data) async {
     try {
-      print('Processing data: ${data.length} bytes');
-      print(data);
       final maybeJson = _codec == null
           ? _bytesToJson(data)
           : await _codec!.tryDecryptFrame(
@@ -288,7 +286,6 @@ class BluetoothService {
       }
 
       if (maybeJson != null) {
-        print('Received message: $maybeJson');
         onMessageReceived?.call(maybeJson);
       }
     } catch (e) {
@@ -298,7 +295,6 @@ class BluetoothService {
 
   Map<String, dynamic>? _bytesToJson(Uint8List pt) {
     try {
-      print('Decoding data: ${utf8.decode(pt)}');
       return json.decode(utf8.decode(pt)) as Map<String, dynamic>;
     } catch (_) {
       return null;

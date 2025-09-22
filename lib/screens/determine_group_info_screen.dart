@@ -36,7 +36,6 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
   @override
   void initState() {
     super.initState();
-    print('DetermineGroupInfoScreen: initState called');
     
     // Initialize animations
     _pulseController = AnimationController(
@@ -82,11 +81,9 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
     _pulseController.repeat(reverse: true);
     _rotationController.repeat();
     _waveController.repeat();
-    print('DetermineGroupInfoScreen: Animations started');
     
     // Kick off RSSI workflow after first frame so context is ready
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      print('DetermineGroupInfoScreen: Starting RSSI workflow');
       _runRssiWorkflow();
     });
   }
@@ -108,27 +105,22 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
     final available = _loraFreqsMhz.where((f) => !excluded.contains(f)).toList();
     if (available.isEmpty) {
       // If somehow all excluded, reset
-      print('DetermineGroupInfoScreen: All frequencies excluded, resetting available list');
       available.addAll(_loraFreqsMhz);
     }
     final idx = math.Random().nextInt(available.length);
     final selectedFreq = available[idx];
-    print('DetermineGroupInfoScreen: Selected random frequency: ${selectedFreq.toStringAsFixed(1)} MHz (${available.length} available)');
     return selectedFreq;
   }
 
   Future<void> _runRssiWorkflow() async {
-    print('DetermineGroupInfoScreen: Starting RSSI workflow');
     final provider = Provider.of<BluetoothProvider>(context, listen: false);
 
     // Try up to 3 unique frequencies
     for (int attempt = 0; attempt < 3; attempt++) {
       if (!mounted) {
-        print('DetermineGroupInfoScreen: Widget unmounted, stopping workflow');
         return;
       }
 
-      print('DetermineGroupInfoScreen: RSSI attempt ${attempt + 1}/3');
       final freqMhz = _getRandomLoRaFreq(exclude: _triedFreqs);
       _triedFreqs.add(freqMhz);
       _currentFreqMhz = freqMhz;
@@ -137,7 +129,6 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
         _currentPhase = 1;
         _statusMessage = 'Scanning ${freqMhz.toStringAsFixed(1)} MHz...';
       });
-      print('DetermineGroupInfoScreen: Updated UI for frequency ${freqMhz.toStringAsFixed(1)} MHz');
 
       // Build RSSI scan params for the device
       final scanParams = {
@@ -150,16 +141,12 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
         'debounce_samples': 2,
         'threshold_dbm': -95.0,
       };
-      print('DetermineGroupInfoScreen: RSSI scan params: $scanParams');
 
       // Fire the request
-      print('DetermineGroupInfoScreen: Starting RSSI scan...');
       final started = await provider.startRssiScan(scanParams);
-      print('DetermineGroupInfoScreen: RSSI scan started: $started');
       
       if (!started) {
         // Treat as busy/no result if we cannot start
-        print('DetermineGroupInfoScreen: RSSI scan failed to start, treating as busy');
         _attemptResults.add(_RssiAttemptResult(
           frequencyMhz: freqMhz,
           busyScore: 1.0,
@@ -168,12 +155,9 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
         ));
       } else {
         // Wait for results without timeout - let the bluetooth provider complete the scan
-        print('DetermineGroupInfoScreen: Waiting for RSSI results...');
         final results = await _waitForRssiResults(expectedFreqMhz: freqMhz);
-        print('DetermineGroupInfoScreen: RSSI results received: $results');
 
         final parsed = _parseRssiResults(results);
-        print('DetermineGroupInfoScreen: Parsed RSSI results - isBusy: ${parsed.isBusy}, busyScore: ${parsed.busyScore}');
         
         _attemptResults.add(_RssiAttemptResult(
           frequencyMhz: freqMhz,
@@ -184,7 +168,6 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
 
         if (!parsed.isBusy) {
           // Good channel found
-          print('DetermineGroupInfoScreen: Found clear channel at ${freqMhz.toStringAsFixed(1)} MHz, returning results');
           if (!mounted) return;
           Navigator.of(context).pop({
             'centerFrequencyHz': (freqMhz * 1000000).round(),
@@ -197,7 +180,6 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
 
       // Busy path: inform user and retry with another frequency
       if (!mounted) return;
-      print('DetermineGroupInfoScreen: Channel busy, showing snackbar and retrying');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -213,13 +195,9 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
     }
 
     // All tried and busy: choose least busy
-    print('DetermineGroupInfoScreen: All attempts completed, choosing least busy frequency');
-    print('DetermineGroupInfoScreen: Attempt results: ${_attemptResults.map((r) => '${r.frequencyMhz.toStringAsFixed(1)}MHz (score: ${r.busyScore})').join(', ')}');
-    
     if (_attemptResults.isNotEmpty) {
       _attemptResults.sort((a, b) => a.busyScore.compareTo(b.busyScore));
       final best = _attemptResults.first;
-      print('DetermineGroupInfoScreen: Selected least busy frequency: ${best.frequencyMhz.toStringAsFixed(1)} MHz (score: ${best.busyScore})');
       if (!mounted) return;
       Navigator.of(context).pop({
         'centerFrequencyHz': (best.frequencyMhz * 1000000).round(),
@@ -229,7 +207,6 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
     } else {
       // Fallback: random freq
       final fallback = _getRandomLoRaFreq();
-      print('DetermineGroupInfoScreen: No results available, using fallback frequency: ${fallback.toStringAsFixed(1)} MHz');
       if (!mounted) return;
       Navigator.of(context).pop({
         'centerFrequencyHz': (fallback * 1000000).round(),
@@ -242,7 +219,6 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
   Future<Map<String, dynamic>?> _waitForRssiResults({
     required double expectedFreqMhz,
   }) async {
-    print('DetermineGroupInfoScreen: Waiting for RSSI results for ${expectedFreqMhz.toStringAsFixed(1)} MHz');
     final provider = Provider.of<BluetoothProvider>(context, listen: false);
 
     Map<String, dynamic>? lastSeen;
@@ -251,48 +227,36 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
     // Wait indefinitely for results from the bluetooth provider
     while (true) {
       if (!mounted) {
-        print('DetermineGroupInfoScreen: Widget unmounted while waiting for results');
         return lastSeen;
       }
       
       checkCount++;
       final res = provider.rssiScanResults;
       if (res != null) {
-        print('DetermineGroupInfoScreen: RSSI result received (check #$checkCount): $res');
         lastSeen = Map<String, dynamic>.from(res);
         // Try to ensure this result is for the requested frequency if provided
         final resFreq = (res['freq'] ?? res['frequency'] ?? res['centerFrequencyMhz']);
         if (resFreq is num) {
           final diff = (resFreq.toDouble() - expectedFreqMhz).abs();
-          print('DetermineGroupInfoScreen: Result frequency: ${resFreq.toDouble().toStringAsFixed(1)} MHz, expected: ${expectedFreqMhz.toStringAsFixed(1)} MHz, diff: ${diff.toStringAsFixed(3)} MHz');
           if (diff < 0.05) {
-            print('DetermineGroupInfoScreen: Frequency match found, returning result');
             return lastSeen;
           }
         } else {
           // If no freq in result, assume it's for our request
-          print('DetermineGroupInfoScreen: No frequency in result, assuming it matches our request');
           return lastSeen;
         }
-      } else if (checkCount % 10 == 0) {
-        // Print every 3 seconds to avoid spam
-        print('DetermineGroupInfoScreen: Still waiting for RSSI results (check #$checkCount)...');
       }
       await Future.delayed(const Duration(milliseconds: 300));
     }
   }
 
   _ParsedRssi _parseRssiResults(Map<String, dynamic>? results) {
-    print('DetermineGroupInfoScreen: Parsing RSSI results: $results');
-    
     if (results == null) {
-      print('DetermineGroupInfoScreen: No results to parse, defaulting to busy');
       return const _ParsedRssi(isBusy: true, busyScore: 1.0);
     }
 
     // Check for error first
     if (results['ok'] == false) {
-      print('DetermineGroupInfoScreen: RSSI check failed with error: ${results['e']}');
       return const _ParsedRssi(isBusy: true, busyScore: 1.0);
     }
 
@@ -301,7 +265,6 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
       final busyPct = (results['busyPct'] as num?)?.toDouble() ?? 100.0;
       final busyScore = (busyPct / 100.0).clamp(0.0, 1.0);
       final isBusy = busyScore >= 0.5; // Consider busy if more than 50% busy
-      print('DetermineGroupInfoScreen: New format - busyPct: $busyPct%, busyScore: $busyScore, isBusy: $isBusy');
       return _ParsedRssi(isBusy: isBusy, busyScore: busyScore);
     }
 
@@ -310,56 +273,46 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
     // Heuristics: prefer explicit busy/busyScore; else derive from activity metrics
     if (results['busy'] is bool) {
       final busy = results['busy'] as bool;
-      print('DetermineGroupInfoScreen: Found explicit busy flag: $busy');
       return _ParsedRssi(isBusy: busy, busyScore: busy ? 1.0 : 0.0);
     }
     if (results['busyScore'] is num) {
       final score = (results['busyScore'] as num).toDouble().clamp(0.0, 1.0);
-      print('DetermineGroupInfoScreen: Found explicit busyScore: $score');
       return _ParsedRssi(isBusy: score >= 0.5, busyScore: score);
     }
     if (results['busyPct'] is num) {
       final busyPct = (results['busyPct'] as num).toDouble();
       final score = (busyPct / 100.0).clamp(0.0, 1.0);
-      print('DetermineGroupInfoScreen: Found busyPct: $busyPct%, score: $score');
       return _ParsedRssi(isBusy: score >= 0.5, busyScore: score);
     }
     if (r is Map) {
       if (r['busy'] is bool) {
         final busy = r['busy'] as bool;
-        print('DetermineGroupInfoScreen: Found busy flag in results: $busy');
         return _ParsedRssi(isBusy: busy, busyScore: busy ? 1.0 : 0.0);
       }
       if (r['busyScore'] is num) {
         final score = (r['busyScore'] as num).toDouble().clamp(0.0, 1.0);
-        print('DetermineGroupInfoScreen: Found busyScore in results: $score');
         return _ParsedRssi(isBusy: score >= 0.5, busyScore: score);
       }
       if (r['busyPct'] is num) {
         final busyPct = (r['busyPct'] as num).toDouble();
         final score = (busyPct / 100.0).clamp(0.0, 1.0);
-        print('DetermineGroupInfoScreen: Found busyPct in results: $busyPct%, score: $score');
         return _ParsedRssi(isBusy: score >= 0.5, busyScore: score);
       }
       if (r['activity'] is num) {
         final score = (r['activity'] as num).toDouble().clamp(0.0, 1.0);
-        print('DetermineGroupInfoScreen: Found activity score: $score');
         return _ParsedRssi(isBusy: score >= 0.5, busyScore: score);
       }
       if (r['duty'] is num) {
         final score = (r['duty'] as num).toDouble().clamp(0.0, 1.0);
-        print('DetermineGroupInfoScreen: Found duty score: $score');
         return _ParsedRssi(isBusy: score >= 0.5, busyScore: score);
       }
     }
     // Default conservative: consider busy
-    print('DetermineGroupInfoScreen: No recognizable metrics found, defaulting to busy');
     return const _ParsedRssi(isBusy: true, busyScore: 1.0);
   }
 
   @override
   void dispose() {
-    print('DetermineGroupInfoScreen: dispose called');
     _pulseController.dispose();
     _rotationController.dispose();
     _waveController.dispose();
