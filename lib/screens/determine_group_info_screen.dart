@@ -9,7 +9,8 @@ class DetermineGroupInfoScreen extends StatefulWidget {
   const DetermineGroupInfoScreen({super.key});
 
   @override
-  State<DetermineGroupInfoScreen> createState() => _DetermineGroupInfoScreenState();
+  State<DetermineGroupInfoScreen> createState() =>
+      _DetermineGroupInfoScreenState();
 }
 
 class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
@@ -20,89 +21,182 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
   late Animation<double> _pulseAnimation;
   late Animation<double> _rotationAnimation;
   late Animation<double> _waveAnimation;
-  
+
   int _currentPhase = 0;
   String? _statusMessage;
   double? _currentFreqMhz;
   final Set<double> _triedFreqs = {};
   final List<_RssiAttemptResult> _attemptResults = [];
-  
+
   final List<String> _phases = [
     'Determining group parameters...',
     'Scanning frequencies...',
     'Creating the group...',
   ];
 
+  int? _selectedSpreadingFactor;
+  bool _showSfDialog = true;
+  bool _sfDialogShown = false;
+
   @override
   void initState() {
     super.initState();
-    
+
     // Initialize animations
     _pulseController = AnimationController(
       duration: const Duration(milliseconds: 1500),
       vsync: this,
     );
-    
+
     _rotationController = AnimationController(
       duration: const Duration(seconds: 3),
       vsync: this,
     );
-    
+
     _waveController = AnimationController(
       duration: const Duration(milliseconds: 2000),
       vsync: this,
     );
-    
-    _pulseAnimation = Tween<double>(
-      begin: 0.8,
-      end: 1.2,
-    ).animate(CurvedAnimation(
-      parent: _pulseController,
-      curve: Curves.easeInOut,
-    ));
-    
-    _rotationAnimation = Tween<double>(
-      begin: 0,
-      end: 2 * math.pi,
-    ).animate(CurvedAnimation(
-      parent: _rotationController,
-      curve: Curves.linear,
-    ));
-    
+
+    _pulseAnimation = Tween<double>(begin: 0.8, end: 1.2).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+
+    _rotationAnimation = Tween<double>(begin: 0, end: 2 * math.pi).animate(
+      CurvedAnimation(parent: _rotationController, curve: Curves.linear),
+    );
+
     _waveAnimation = Tween<double>(
       begin: 0,
       end: 2 * math.pi,
-    ).animate(CurvedAnimation(
-      parent: _waveController,
-      curve: Curves.linear,
-    ));
-    
+    ).animate(CurvedAnimation(parent: _waveController, curve: Curves.linear));
+
     // Start animations
     _pulseController.repeat(reverse: true);
     _rotationController.repeat();
     _waveController.repeat();
-    
-    // Kick off RSSI workflow after first frame so context is ready
+
+    // Show SF selection dialog after the first frame, before running workflow
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _runRssiWorkflow();
+      if (mounted && _showSfDialog && !_sfDialogShown) {
+        _showSfDialog = false; // Only show once
+        _sfDialogShown = true;
+        _showSfPickerDialog(context);
+      }
     });
+  }
+
+  Future<void> _showSfPickerDialog(BuildContext context) async {
+    int tempSf = 8; // Default selection
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (sfContext) {
+        return AlertDialog(
+          title: const Text('Select Spreading Factor'),
+          content: StatefulBuilder(
+            builder: (context, setState) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Please choose LoRa Spreading Factor (SF):',
+                    style: TextStyle(fontSize: 15),
+                  ),
+                  const SizedBox(height: 16),
+                  DropdownButton<int>(
+                    value: tempSf,
+                    items: List<DropdownMenuItem<int>>.generate(
+                        6,
+                        (idx) => DropdownMenuItem(
+                              value: 7 + idx,
+                              child: Text('SF${7 + idx}'),
+                            )),
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() {
+                          tempSf = value;
+                        });
+                      }
+                    },
+                  ),
+                ],
+              );
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                // Optionally don't allow closing/cancelling
+              },
+              style: TextButton.styleFrom(
+                  foregroundColor: Colors.grey[400]
+              ),
+              child: const Text('Cancel', style: TextStyle(decoration: TextDecoration.lineThrough)),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                _selectedSpreadingFactor = tempSf;
+                Navigator.of(sfContext).pop();
+                _runRssiWorkflow();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: PRIMARY_COLOR,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   // Frequencies in MHz, 125 kHz channels on 200 kHz raster (EU 863–870)
   static const List<double> _loraFreqsMhz = [
-    863.1, 863.3, 863.5, 863.7, 863.9,
-    864.1, 864.3, 864.5, 864.7, 864.9,
-    865.1, 865.3, 865.5, 865.7, 865.9,
-    866.1, 866.3, 866.5, 866.7, 866.9,
-    867.1, 867.3, 867.5, 867.7, 867.9,
-    868.1, 868.3, 868.5, 868.7, 868.9,
-    869.1, 869.3, 869.5, 869.7, 869.9,
+    863.1,
+    863.3,
+    863.5,
+    863.7,
+    863.9,
+    864.1,
+    864.3,
+    864.5,
+    864.7,
+    864.9,
+    865.1,
+    865.3,
+    865.5,
+    865.7,
+    865.9,
+    866.1,
+    866.3,
+    866.5,
+    866.7,
+    866.9,
+    867.1,
+    867.3,
+    867.5,
+    867.7,
+    867.9,
+    868.1,
+    868.3,
+    868.5,
+    868.7,
+    868.9,
+    869.1,
+    869.3,
+    869.5,
+    869.7,
+    869.9,
   ];
 
   // Dart implementation of getRandomLoRaFreq(), avoiding already tried freqs
   double _getRandomLoRaFreq({Set<double>? exclude}) {
     final excluded = exclude ?? {};
-    final available = _loraFreqsMhz.where((f) => !excluded.contains(f)).toList();
+    final available = _loraFreqsMhz
+        .where((f) => !excluded.contains(f))
+        .toList();
     if (available.isEmpty) {
       // If somehow all excluded, reset
       available.addAll(_loraFreqsMhz);
@@ -113,6 +207,15 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
   }
 
   Future<void> _runRssiWorkflow() async {
+    // Do not start workflow until SF is selected
+    if (_selectedSpreadingFactor == null) {
+      if (!_sfDialogShown) {
+        // Defensive: show the dialog if not shown yet
+        _showSfPickerDialog(context);
+      }
+      return;
+    }
+
     final provider = Provider.of<BluetoothProvider>(context, listen: false);
 
     // Try up to 3 unique frequencies
@@ -144,27 +247,31 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
 
       // Fire the request
       final started = await provider.startRssiScan(scanParams);
-      
+
       if (!started) {
         // Treat as busy/no result if we cannot start
-        _attemptResults.add(_RssiAttemptResult(
-          frequencyMhz: freqMhz,
-          busyScore: 1.0,
-          isBusy: true,
-          rawResults: const {},
-        ));
+        _attemptResults.add(
+          _RssiAttemptResult(
+            frequencyMhz: freqMhz,
+            busyScore: 1.0,
+            isBusy: true,
+            rawResults: const {},
+          ),
+        );
       } else {
         // Wait for results without timeout - let the bluetooth provider complete the scan
         final results = await _waitForRssiResults(expectedFreqMhz: freqMhz);
 
         final parsed = _parseRssiResults(results);
-        
-        _attemptResults.add(_RssiAttemptResult(
-          frequencyMhz: freqMhz,
-          busyScore: parsed.busyScore,
-          isBusy: parsed.isBusy,
-          rawResults: results ?? const {},
-        ));
+
+        _attemptResults.add(
+          _RssiAttemptResult(
+            frequencyMhz: freqMhz,
+            busyScore: parsed.busyScore,
+            isBusy: parsed.isBusy,
+            rawResults: results ?? const {},
+          ),
+        );
 
         if (!parsed.isBusy) {
           // Good channel found
@@ -172,7 +279,7 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
           Navigator.of(context).pop({
             'centerFrequencyHz': (freqMhz * 1000000).round(),
             'bandwidthHz': 125000,
-            'spreadingFactor': 7,
+            'spreadingFactor': _selectedSpreadingFactor ?? 8,
           });
           return;
         }
@@ -202,7 +309,7 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
       Navigator.of(context).pop({
         'centerFrequencyHz': (best.frequencyMhz * 1000000).round(),
         'bandwidthHz': 125000,
-        'spreadingFactor': 7,
+        'spreadingFactor': _selectedSpreadingFactor ?? 8,
       });
     } else {
       // Fallback: random freq
@@ -211,7 +318,7 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
       Navigator.of(context).pop({
         'centerFrequencyHz': (fallback * 1000000).round(),
         'bandwidthHz': 125000,
-        'spreadingFactor': 7,
+        'spreadingFactor': _selectedSpreadingFactor ?? 8,
       });
     }
   }
@@ -223,19 +330,20 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
 
     Map<String, dynamic>? lastSeen;
     int checkCount = 0;
-    
+
     // Wait indefinitely for results from the bluetooth provider
     while (true) {
       if (!mounted) {
         return lastSeen;
       }
-      
+
       checkCount++;
       final res = provider.rssiScanResults;
       if (res != null) {
         lastSeen = Map<String, dynamic>.from(res);
         // Try to ensure this result is for the requested frequency if provided
-        final resFreq = (res['freq'] ?? res['frequency'] ?? res['centerFrequencyMhz']);
+        final resFreq =
+            (res['freq'] ?? res['frequency'] ?? res['centerFrequencyMhz']);
         if (resFreq is num) {
           final diff = (resFreq.toDouble() - expectedFreqMhz).abs();
           if (diff < 0.05) {
@@ -323,7 +431,7 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
     final isTablet = screenSize.width / screenSize.height < 1.2;
-    
+
     return Scaffold(
       backgroundColor: Colors.grey[50],
       body: Container(
@@ -380,7 +488,7 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
                   ],
                 ),
               ),
-              
+
               // Main content
               Expanded(
                 child: Column(
@@ -413,17 +521,30 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
                                     children: List.generate(8, (index) {
                                       final angle = (index * math.pi * 2) / 8;
                                       return Positioned(
-                                        left: (isTablet ? 140 : 115) + 
-                                               (isTablet ? 120 : 100) * math.cos(angle) - 4,
-                                        top: (isTablet ? 140 : 115) + 
-                                              (isTablet ? 120 : 100) * math.sin(angle) - 4,
+                                        left:
+                                            (isTablet ? 140 : 115) +
+                                            (isTablet ? 120 : 100) *
+                                                math.cos(angle) -
+                                            4,
+                                        top:
+                                            (isTablet ? 140 : 115) +
+                                            (isTablet ? 120 : 100) *
+                                                math.sin(angle) -
+                                            4,
                                         child: Container(
                                           width: 8,
                                           height: 8,
                                           decoration: BoxDecoration(
                                             shape: BoxShape.circle,
                                             color: PRIMARY_COLOR.withOpacity(
-                                              0.2 + 0.6 * ((index + _rotationAnimation.value * 4) % 8) / 8,
+                                              0.2 +
+                                                  0.6 *
+                                                      ((index +
+                                                              _rotationAnimation
+                                                                      .value *
+                                                                  4) %
+                                                          8) /
+                                                      8,
                                             ),
                                           ),
                                         ),
@@ -434,7 +555,7 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
                               );
                             },
                           ),
-                          
+
                           // Middle pulsing circle
                           AnimatedBuilder(
                             animation: _pulseAnimation,
@@ -456,13 +577,16 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
                               );
                             },
                           ),
-                          
+
                           // Inner wave animation
                           AnimatedBuilder(
                             animation: _waveAnimation,
                             builder: (context, child) {
                               return CustomPaint(
-                                size: Size(isTablet ? 120 : 100, isTablet ? 120 : 100),
+                                size: Size(
+                                  isTablet ? 120 : 100,
+                                  isTablet ? 120 : 100,
+                                ),
                                 painter: WavePainter(
                                   animation: _waveAnimation.value,
                                   color: PRIMARY_COLOR,
@@ -470,7 +594,7 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
                               );
                             },
                           ),
-                          
+
                           // Center icon
                           Container(
                             width: isTablet ? 60 : 50,
@@ -495,14 +619,16 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
                         ],
                       ),
                     ),
-                    
+
                     SizedBox(height: isTablet ? 60 : 50),
-                    
+
                     // Phase text with animation
                     AnimatedSwitcher(
                       duration: const Duration(milliseconds: 500),
                       child: Column(
-                        key: ValueKey(_currentPhase.toString() + (_statusMessage ?? '')),
+                        key: ValueKey(
+                          _currentPhase.toString() + (_statusMessage ?? ''),
+                        ),
                         children: [
                           Text(
                             _phases[_currentPhase],
@@ -524,22 +650,47 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
                               ),
                               textAlign: TextAlign.center,
                             ),
-                          ]
+                          ],
+                          if (_selectedSpreadingFactor == null) ...[
+                            const SizedBox(height: 24),
+                            Text(
+                              "Awaiting SF selection...",
+                              style: TextStyle(
+                                color: PRIMARY_COLOR,
+                                fontWeight: FontWeight.w700,
+                                fontSize: isTablet ? 18 : 14,
+                              ),
+                            ),
+                          ],
+                          if (_selectedSpreadingFactor != null) ...[
+                            const SizedBox(height: 16),
+                            Text(
+                              "SF${_selectedSpreadingFactor}",
+                              style: TextStyle(
+                                color: PRIMARY_COLOR.withOpacity(0.86),
+                                fontSize: isTablet ? 16 : 13,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 1.0,
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
-                    
+
                     SizedBox(height: isTablet ? 40 : 32),
-                    
+
                     // Status indicators
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: List.generate(3, (index) {
                         final isActive = index <= _currentPhase;
                         final isCompleted = index < _currentPhase;
-                        
+
                         return Container(
-                          margin: EdgeInsets.symmetric(horizontal: isTablet ? 12 : 8),
+                          margin: EdgeInsets.symmetric(
+                            horizontal: isTablet ? 12 : 8,
+                          ),
                           child: Column(
                             children: [
                               Container(
@@ -550,12 +701,14 @@ class _DetermineGroupInfoScreenState extends State<DetermineGroupInfoScreen>
                                   color: isCompleted
                                       ? PRIMARY_COLOR
                                       : isActive
-                                          ? PRIMARY_COLOR.withOpacity(0.7)
-                                          : Colors.grey[300],
+                                      ? PRIMARY_COLOR.withOpacity(0.7)
+                                      : Colors.grey[300],
                                   boxShadow: isActive
                                       ? [
                                           BoxShadow(
-                                            color: PRIMARY_COLOR.withOpacity(0.3),
+                                            color: PRIMARY_COLOR.withOpacity(
+                                              0.3,
+                                            ),
                                             blurRadius: 8,
                                             spreadRadius: 2,
                                           ),
@@ -634,7 +787,10 @@ class WavePainter extends CustomPainter {
     final radius = size.width / 2;
 
     for (int i = 0; i < 3; i++) {
-      final waveRadius = radius * (0.3 + 0.3 * i) * (1 + 0.3 * math.sin(animation + i * math.pi / 3));
+      final waveRadius =
+          radius *
+          (0.3 + 0.3 * i) *
+          (1 + 0.3 * math.sin(animation + i * math.pi / 3));
       canvas.drawCircle(center, waveRadius, paint);
     }
   }

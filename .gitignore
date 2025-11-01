@@ -33,6 +33,10 @@ migrate_working_dir/
 .pub/
 /build/
 
+# Ignore entire iOS and Android folders
+ios/
+android/
+
 # Symbolication related
 app.*.symbols
 

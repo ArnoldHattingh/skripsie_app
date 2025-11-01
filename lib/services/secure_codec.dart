@@ -2,6 +2,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:collection';
+import 'dart:developer' as developer;
 import 'package:cryptography/cryptography.dart';
 import 'package:crypto/crypto.dart' as crypto;
 
@@ -87,6 +88,10 @@ class SecureCodec {
     int type = MsgType.json,
     int hop = 0,
   }) async {
+    // Log plaintext JSON to verify what will be encrypted
+    try {
+      developer.log('Encrypting JSON plaintext: ${jsonEncode(map)}');
+    } catch (_) {}
     final pt = Uint8List.fromList(
       utf8.encode(jsonEncode(map)),
     ); // minified JSON
@@ -121,7 +126,11 @@ class SecureCodec {
     if ((dec.flags & MsgFlags.frag) == 0) {
       // Single-frame message
       if (dec.type == MsgType.json) {
-        return _bytesToJson(dec.plaintext);
+        final m = _bytesToJson(dec.plaintext);
+        if (m != null) {
+          developer.log('Decrypted JSON plaintext: ${jsonEncode(m)}');
+        }
+        return m;
       } else {
         onNonJson?.call(
           dec.type,
@@ -147,7 +156,11 @@ class SecureCodec {
       _reassembly.remove(key);
       // Whole plaintext belongs to original message type
       if (dec.type == MsgType.json) {
-        return _bytesToJson(whole);
+        final m = _bytesToJson(whole);
+        if (m != null) {
+          developer.log('Decrypted JSON plaintext (reassembled): ${jsonEncode(m)}');
+        }
+        return m;
       } else {
         onNonJson?.call(
           dec.type,

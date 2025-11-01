@@ -269,23 +269,38 @@ class BluetoothService {
   /// Process decryption asynchronously in parallel
   void _processDecryptionAsync(Uint8List data) async {
     try {
-      final maybeJson = _codec == null
-          ? _bytesToJson(data)
-          : await _codec!.tryDecryptFrame(
-              data,
-              onNonJson: (type, flags, hop, senderId, seq, pt) {
-                // Handle other types if you add them later (acks, etc.)
-              },
-              onFragProgress: (received, total, senderId, seq) {
-                onReceiveProgress?.call(received, total);
-              },
-            );
+      Map<String, dynamic>? maybeJson;
+
+      if (_codec == null) {
+        // No encryption codec set: attempt raw JSON parse
+        maybeJson = _bytesToJson(data);
+      } else {
+        // Try decrypting first
+        maybeJson = await _codec!.tryDecryptFrame(
+          data,
+          onNonJson: (type, flags, hop, senderId, seq, pt) {
+            // Intentionally no plaintext logging for non-JSON types to reduce noise
+          },
+          onFragProgress: (received, total, senderId, seq) {
+            onReceiveProgress?.call(received, total);
+          },
+        );
+
+        // Fallback: if decrypt returned null, try parsing as raw JSON telemetry
+        if (maybeJson == null) {
+          final raw = _bytesToJson(data);
+          if (raw != null) {
+            maybeJson = raw;
+          }
+        }
+      }
 
       if (_codec != null) {
         _codec!.sweepStaleFragments();
       }
 
       if (maybeJson != null) {
+        developer.log('Decrypted JSON received: ${jsonEncode(maybeJson)}');
         onMessageReceived?.call(maybeJson);
       }
     } catch (e) {
@@ -295,8 +310,11 @@ class BluetoothService {
 
   Map<String, dynamic>? _bytesToJson(Uint8List pt) {
     try {
-      return json.decode(utf8.decode(pt)) as Map<String, dynamic>;
-    } catch (_) {
+      final decoded = utf8.decode(pt);
+      final json = jsonDecode(decoded) as Map<String, dynamic>;
+      return json;
+    } catch (e) {
+      developer.log('JSON parse error: $e');
       return null;
     }
   }
@@ -314,10 +332,13 @@ class BluetoothService {
       return false;
     }
     try {
+      final jsonStr = jsonEncode(json);
+      developer.log('Sending JSON plaintext: $jsonStr');
+
       // Encrypt JSON map; may produce multiple frames if large
       final frames = encrypt
           ? await _codec!.encryptJson(json, type: MsgType.json)
-          : [Uint8List.fromList(utf8.encode(jsonEncode(json)))];
+          : [Uint8List.fromList(utf8.encode(jsonStr))];
 
       if (sendRaw) {
         await _ble.writeCharacteristicWithoutResponse(

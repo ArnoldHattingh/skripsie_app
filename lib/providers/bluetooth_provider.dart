@@ -55,6 +55,7 @@ class BluetoothProvider extends ChangeNotifier {
   int? _sendProgressTotal;
   int? _recvProgressReceived;
   int? _recvProgressTotal;
+  Map<String, dynamic>? _pendingLoraRx; // holds latest LoRa RX meta for next text message
 
   /// Safely notify listeners only if not disposed
   void _safeNotifyListeners() {
@@ -137,7 +138,6 @@ class BluetoothProvider extends ChangeNotifier {
       final locationData = myFriend!.toJson();
       sendData(locationData);
       _hasInitialLocationSent = true;
-      developer.log('Initial location sent after joining group');
     }
   }
 
@@ -156,7 +156,6 @@ class BluetoothProvider extends ChangeNotifier {
       if (myFriend?.latitude != null && myFriend?.longitude != null) {
         final locationData = myFriend!.toJson();
         sendData(locationData);
-        developer.log('Periodic location update sent');
       }
     });
   }
@@ -199,9 +198,6 @@ class BluetoothProvider extends ChangeNotifier {
 
     // Notify listeners if any friends were removed
     if (_friends!.length != initialCount) {
-      developer.log(
-        'Removed inactive friends. Count: ${initialCount - _friends!.length}',
-      );
       _safeNotifyListeners();
     }
   }
@@ -218,15 +214,27 @@ class BluetoothProvider extends ChangeNotifier {
         } else {
           _friends![existingIndex] = friend;
         }
-        developer.log(
-          'Received friend location: ${friend.latitude}, ${friend.longitude}',
-        );
+        // reduced routine logging for friend location updates
       } else if (jsonData['text'] != null) {
         // Check if this is a location request message
         if (jsonData['text'] == 'LOCATION_REQUEST' &&
             jsonData['messageType'] == 'location_request') {
           _handleLocationRequest(jsonData);
         } else {
+          // If we have pending loraRx meta from partial chunks, append it to the text
+          if (_pendingLoraRx != null) {
+            final rssi = _pendingLoraRx!['rssi'];
+            final snr = _pendingLoraRx!['snr'];
+            final len = _pendingLoraRx!['len'];
+            final parts = <String>[];
+            if (rssi != null) parts.add('RSSI $rssi');
+            if (snr != null) parts.add('SNR $snr');
+            if (len != null) parts.add('len $len');
+            if (parts.isNotEmpty) {
+              jsonData['text'] = '${jsonData['text']} (${parts.join(', ')})';
+            }
+            _pendingLoraRx = null; // consume after use
+          }
           jsonData['isMe'] = false;
           final message = ChatMessage.fromJson(jsonData);
           _messages.add(message);
@@ -241,11 +249,19 @@ class BluetoothProvider extends ChangeNotifier {
         _unreadMessageCount++;
       } else if (jsonData['battery'] != null) {
         _batteryPercentage = jsonData['battery'];
+      } else if (jsonData['t'] == 'loraRx') {
+        // Buffer latest LoRa RX meta to be shown with the next full text chat message
+        _pendingLoraRx = {
+          'rssi': jsonData['rssi'],
+          'snr': jsonData['snr'],
+          'len': jsonData['len'],
+        };
+        // reduced routine logging for LoRa RX meta buffering
       } else if (jsonData['t'] == 'rssi') {
         // Handle RSSI scan results
         _rssiScanResults = jsonData;
         _isRssiScanning = false;
-        developer.log('Received RSSI scan results: ${jsonData['results']}');
+        // reduced routine logging for RSSI scan results
       }
 
       _safeNotifyListeners();
@@ -255,21 +271,20 @@ class BluetoothProvider extends ChangeNotifier {
   }
 
   void _handleLocationRequest(Map<String, dynamic> requestData) {
-    developer.log('Received location request from ${requestData['userName']}');
+    // reduced routine logging for received location request
 
     // Send current location back to the requester
     final myFriend = _friends?.firstWhereOrNull((friend) => friend.isMe);
     if (myFriend?.latitude != null && myFriend?.longitude != null) {
       final locationData = myFriend!.toJson();
       sendData(locationData);
-      developer.log('Sent location in response to request');
+      // reduced routine logging for sent location response
     }
   }
 
   /// Start RSSI scan with provided parameters
   Future<bool> startRssiScan(Map<String, dynamic> scanParams) async {
     if (!_bluetoothService.isConnected || _isSending || _isDisposed || _isRssiScanning) {
-      developer.log('Cannot start RSSI scan: invalid conditions');
       return false;
     }
 
@@ -284,10 +299,7 @@ class BluetoothProvider extends ChangeNotifier {
         encrypt: false,
       );
 
-      if (success) {
-        developer.log('RSSI scan started with params: $scanParams');
-      } else {
-        developer.log('Failed to start RSSI scan');
+      if (!success) {
         _isRssiScanning = false;
         _safeNotifyListeners();
       }
@@ -307,7 +319,6 @@ class BluetoothProvider extends ChangeNotifier {
         !_bluetoothService.isConnected ||
         _isSending ||
         _isDisposed) {
-      developer.log('Cannot request location: invalid conditions');
       return false;
     }
 
@@ -328,11 +339,7 @@ class BluetoothProvider extends ChangeNotifier {
     try {
       final success = await _bluetoothService.sendData(requestMessage);
 
-      if (success) {
-        developer.log('Location request sent to ${friend.name}');
-      } else {
-        developer.log('Failed to send location request to ${friend.name}');
-      }
+      // reduced routine logging for location request outcome
 
       _isSending = false;
       _safeNotifyListeners();
