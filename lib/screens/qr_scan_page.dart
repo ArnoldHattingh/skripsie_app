@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_code_scanner_plus/qr_code_scanner_plus.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:skripsie/providers/bluetooth_provider.dart';
 import 'package:skripsie/screens/device_selection_page.dart';
 
@@ -76,6 +77,49 @@ class _QRScanPageState extends State<QRScanPage> {
       );
     } finally {
       setState(() => _isProcessing = false);
+    }
+  }
+
+  void _showGenerateQrDialog() async {
+    final textController = TextEditingController();
+    String? enteredText = await showDialog<String>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Enter Information for QR Code'),
+          content: TextField(
+            controller: textController,
+            autofocus: true,
+            maxLines: 4,
+            decoration: const InputDecoration(
+              hintText: 'Enter text or information...',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(null);
+              },
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(context).pop(textController.text);
+              },
+              child: const Text('Generate QR Code'),
+            ),
+          ],
+        );
+      },
+    );
+    if (enteredText != null && enteredText.trim().isNotEmpty) {
+      if (!mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => QRGeneratedDisplayPage(data: enteredText.trim()),
+        ),
+      );
     }
   }
 
@@ -156,6 +200,30 @@ class _QRScanPageState extends State<QRScanPage> {
                         ),
                       ),
                     ),
+                    // const SizedBox(height: 20),
+                    // FilledButton.icon(
+                    //   onPressed: _showGenerateQrDialog,
+                    //   icon: const Icon(Icons.qr_code),
+                    //   label: const Padding(
+                    //     padding: EdgeInsets.all(16.0),
+                    //     child: Text(
+                    //       'Generate QR Code',
+                    //       style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    //     ),
+                    //   ),
+                    //   style: FilledButton.styleFrom(
+                    //     backgroundColor: Colors.white,
+                    //     foregroundColor: Theme.of(context).colorScheme.primary,
+                    //     shape: RoundedRectangleBorder(
+                    //       borderRadius: BorderRadius.circular(16),
+                    //       side: BorderSide(
+                    //         color: Theme.of(context).colorScheme.primary,
+                    //         width: 1.5
+                    //       ),
+                    //     ),
+                    //     elevation: 0,
+                    //   ),
+                    // ),
                     const SizedBox(height: 40),
                     Row(
                       children: [
@@ -329,6 +397,169 @@ class _QRScannerPageState extends State<QRScannerPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+///
+/// Beautiful QR Code Sticker Display Page
+///
+
+class QRGeneratedDisplayPage extends StatelessWidget {
+  final String data;
+  const QRGeneratedDisplayPage({super.key, required this.data});
+
+  @override
+  Widget build(BuildContext context) {
+    final stickerWidth = MediaQuery.of(context).size.width * 0.86;
+    final stickerHeight = stickerWidth * 1.18;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF181A35), // Matches blue/purple device background
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        centerTitle: true,
+        title: const Text(
+          'Scan This QR Code',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 20),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      body: Center(
+        child: Container(
+          width: stickerWidth,
+          height: stickerHeight,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(38),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.16),
+                blurRadius: 22,
+                offset: const Offset(0, 8),
+                spreadRadius: 0.5,
+              ),
+            ],
+            border: Border.all(
+              color: Colors.grey.shade200,
+              width: 2.2,
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 18.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                
+                Column(
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: const Color(0xEEF1F2FC),
+                          width: 1,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.indigo.withOpacity(0.10),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
+                          )
+                        ],
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                      child: Column(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(0),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: QrImageView(
+                              data: data,
+                              version: QrVersions.auto,
+                              size: stickerWidth * 0.54,
+                              backgroundColor: Colors.white,
+                              foregroundColor: const Color(0xFF181A35),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xffe1e3ff),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: SelectableText(
+                              data,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontSize: 19,
+                                color: Color(0xFF181A35),
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 3.5,
+                                fontFamily: 'RobotoMono',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                // Logo at the bottom
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SizedBox(
+                      width: 64,
+                      height: 64,
+                      child: Image.asset(
+                        "lib/assets/Logo Design.png", // Make sure your logo PNG is at this location
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "Friend Radar",
+                          style: TextStyle(
+                            color: Colors.indigo[900],
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.7,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          "Scan to connect your device",
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 13.2,
+                            fontWeight: FontWeight.w500,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
